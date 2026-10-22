@@ -2,7 +2,7 @@
 Type=Application
 Name=YourTube
 GenericName=YouTube client
-Comment=YouTube, owned by the people who watch it
+Comment=Watch YouTube with your history kept on your computer
 Exec=yourtube %U
 Icon=io.github.yourtube.YourTube
 Terminal=false

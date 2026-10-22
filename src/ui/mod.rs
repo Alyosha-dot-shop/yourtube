@@ -1117,7 +1117,7 @@ fn add_actions(app: &Rc<App>, window: &adw::ApplicationWindow) {
                 .application_icon(APP_ID)
                 .version(env!("CARGO_PKG_VERSION"))
                 .developer_name("Alyosha")
-                .comments("YouTube, owned by the people who watch it. Your data stays on your computer.\n\nMade with love by Alyosha :)")
+                .comments("A YouTube app that keeps your history and recommendations on your own computer.\n\nMade with love by Alyosha :)")
                 .license_type(gtk::License::Gpl30)
                 .build()
                 .present(Some(w));

@@ -357,9 +357,14 @@ impl VideoGrid {
         self.show(if visible.is_empty() { "empty" } else { "grid" });
         if fresh {
             // Cards fade in when a page (re)loads; re-adding the class restarts the animation.
+            // It comes off again once they're in, so later updates (progress every few seconds,
+            // background refreshes, cards scrolled into view) happen silently.
             self.grid.remove_css_class("yt-enter");
             let g = self.grid.clone();
-            glib::idle_add_local_once(move || g.add_css_class("yt-enter"));
+            glib::idle_add_local_once(move || {
+                g.add_css_class("yt-enter");
+                glib::timeout_add_local_once(std::time::Duration::from_millis(500), move || g.remove_css_class("yt-enter"));
+            });
         }
         drop(items);
         if let Some(f) = self.on_shown.borrow().as_ref() {

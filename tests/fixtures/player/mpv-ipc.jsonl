@@ -1,0 +1,5 @@
+{"event":"file-loaded"}
+{"data":12.5,"request_id":3,"error":"success"}
+{"request_id":4,"error":"property unavailable"}
+{"event":"client-message","args":["yourtube-skip"]}
+not json at all

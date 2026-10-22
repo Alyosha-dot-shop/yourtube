@@ -1,0 +1,32 @@
+{
+  "onResponseReceivedEndpoints": [
+    {
+      "appendContinuationItemsAction": {
+        "continuationItems": [
+          { "commentViewModel": { "commentKey": "R1", "toolbarStateKey": "RS1", "commentId": "Ugw.reply1" } },
+          {
+            "continuationItemRenderer": {
+              "button": { "buttonRenderer": { "text": { "runs": [{ "text": "Show more replies" }] }, "command": { "continuationCommand": { "token": "MORE_REPLIES_TOKEN" } } } }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "frameworkUpdates": {
+    "entityBatchUpdate": {
+      "mutations": [
+        {
+          "entityKey": "R1",
+          "payload": {
+            "commentEntityPayload": {
+              "properties": { "commentId": "Ugw.reply1", "content": { "content": "A reply" }, "publishedTime": "2 years ago", "replyLevel": 1 },
+              "author": { "channelId": "UCreply", "displayName": "@replier" },
+              "toolbar": { "likeCountNotliked": "3", "replyCount": "" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{"videoId":"fixturevid1","title":"Knife skills","author":"Fixture Cooking","authorId":"UCfixturechannel00000001","published":1792000000000,"viewCount":10,"lengthSeconds":600,"watchProgress":30,"timeWatched":1792500000000,"isLive":false,"type":"video","_id":"fixturevid1"}
+{"videoId":"fixturevid2","title":"Bread basics","author":"Fixture Baking","authorId":"UCfixturechannel00000002","published":1792000000000,"viewCount":5,"lengthSeconds":300,"watchProgress":0,"timeWatched":1792400000000,"isLive":false,"type":"video","_id":"fixturevid2"}
+{"videoId":"fixturevid1","title":"Knife skills","author":"Fixture Cooking","authorId":"UCfixturechannel00000001","published":1792000000000,"viewCount":10,"lengthSeconds":600,"watchProgress":61.5,"timeWatched":1792580645000,"isLive":false,"type":"video","_id":"fixturevid1"}
+{"videoId":"fixturevid9","title":"Deleted later","author":"Someone","authorId":"UCfixturechannel00000003","lengthSeconds":100,"watchProgress":0,"timeWatched":1792300000000,"type":"video","_id":"fixturevid9"}
+{"_id":"fixturevid9","$$deleted":true}

@@ -1,0 +1,9 @@
+[youtube] Extracting URL: https://www.youtube.com/watch?v=jNQXAC9IVRw
+YTP-DL 1024 524288 NA NA NA
+YTP-DL 262144 NA 530000 1048576.5 3
+YTP-DL 524288 524288 NA 2000000 0
+YTP-DL 4096 65536 NA 500000 1
+YTP-POST Merger started
+YTP-POST Merger finished
+YTP-LEN 19
+YTP-FILE /tmp/x/Me at the zoo [jNQXAC9IVRw].mkv

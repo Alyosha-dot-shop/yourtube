@@ -1,0 +1,63 @@
+/* YourTube's own styles. Colours come from the theme (theme.rs) and your style.css. */
+
+.yt-grid { padding: 6px; }
+.yt-grid > child { padding: 6px; border-radius: 12px; transition: background-color 150ms ease; }
+.yt-grid > child:hover { background-color: alpha(currentColor, 0.04); }
+.yt-grid > child:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+
+.yt-thumb { border-radius: 10px; }
+.yt-pic { transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.yt-grid > child:hover .yt-pic { transform: scale(1.035); }
+
+.yt-duration {
+    background: rgba(0, 0, 0, 0.78);
+    color: white;
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin: 6px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+.yt-progress trough, .yt-progress progress { min-height: 4px; border-radius: 0; }
+.yt-progress progress { background: var(--accent-bg-color); }
+.yt-progress { margin: 0 4px 2px 4px; }
+.yt-watched { opacity: 0.5; }
+.yt-note { color: var(--accent-color); }
+
+/* Cards rise in when a page loads. Each row starts a touch later. */
+@keyframes yt-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+}
+.yt-enter > child { animation: yt-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.yt-enter > child:nth-child(4n+2) { animation-delay: 30ms; }
+.yt-enter > child:nth-child(4n+3) { animation-delay: 60ms; }
+.yt-enter > child:nth-child(4n+4) { animation-delay: 90ms; }
+
+/* The refresh icon spins while something loads. */
+@keyframes yt-spin { to { transform: rotate(1turn); } }
+.yt-busy image { animation: yt-spin 900ms linear infinite; }
+
+/* A small pop when search opens. */
+@keyframes yt-pop {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.18); }
+    100% { transform: scale(1); }
+}
+.yt-pop image { animation: yt-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* Placeholder cards pulse while a page loads, rippling across. */
+@keyframes yt-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+.yt-skeleton { background: alpha(currentColor, 0.09); border-radius: 10px; animation: yt-pulse 1.3s ease-in-out infinite; }
+.yt-skel-1 .yt-skeleton { animation-delay: 120ms; }
+.yt-skel-2 .yt-skeleton { animation-delay: 240ms; }
+.yt-skel-3 .yt-skeleton { animation-delay: 360ms; }
+
+/* Incognito: a violet tint on the header so you always know. */
+.yt-incognito headerbar { background: color-mix(in srgb, var(--headerbar-bg-color) 78%, #7a3cff); }
+.yt-incognito banner > revealer > widget { background: color-mix(in srgb, var(--window-bg-color) 70%, #7a3cff); }
+
+.yt-profile { padding: 2px; min-width: 0; }
+
+/* Animations off (Preferences → Appearance). */
+.yt-calm *, .yt-calm { animation: none; transition: none; }

@@ -1,0 +1,2 @@
+{"name":"All Channels","bgColor":"#000000","textColor":"#FFFFFF","subscriptions":[{"id":"UCfixturechannel00000001","name":"Fixture Cooking","thumbnail":"https://example.invalid/cooking.jpg"},{"id":"UCfixturechannel00000002","name":"Fixture Baking","thumbnail":null}],"_id":"allChannels"}
+{"name":"Food","bgColor":"#FF0000","textColor":"#FFFFFF","subscriptions":[{"id":"UCfixturechannel00000001","name":"Fixture Cooking","thumbnail":"https://example.invalid/cooking.jpg"}],"_id":"food"}

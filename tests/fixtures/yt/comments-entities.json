@@ -1,0 +1,91 @@
+{
+  "onResponseReceivedEndpoints": [
+    {
+      "reloadContinuationItemsCommand": {
+        "continuationItems": [
+          { "commentsHeaderRenderer": { "countText": { "runs": [{ "text": "827" }, { "text": " Comments" }] } } }
+        ]
+      }
+    },
+    {
+      "reloadContinuationItemsCommand": {
+        "continuationItems": [
+          {
+            "commentThreadRenderer": {
+              "commentViewModel": {
+                "commentViewModel": {
+                  "commentKey": "KEY_1",
+                  "toolbarStateKey": "STATE_1",
+                  "pinnedText": "Pinned by @freecodecamp",
+                  "commentId": "Ugw4HW6FBuu65NAh2fJ4AaABAg"
+                }
+              },
+              "replies": {
+                "commentRepliesRenderer": {
+                  "contents": [
+                    { "continuationItemRenderer": { "continuationEndpoint": { "continuationCommand": { "token": "REPLIES_TOKEN" } } } }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "commentThreadRenderer": {
+              "commentViewModel": {
+                "commentViewModel": { "commentKey": "KEY_2", "toolbarStateKey": "STATE_2", "commentId": "Ugw5jddqTqA-kj1mBuN4AaABAg" }
+              }
+            }
+          },
+          { "continuationItemRenderer": { "continuationEndpoint": { "continuationCommand": { "token": "NEXT_PAGE_TOKEN" } } } }
+        ]
+      }
+    }
+  ],
+  "frameworkUpdates": {
+    "entityBatchUpdate": {
+      "mutations": [
+        {
+          "entityKey": "KEY_1",
+          "payload": {
+            "commentEntityPayload": {
+              "key": "KEY_1",
+              "properties": {
+                "commentId": "Ugw4HW6FBuu65NAh2fJ4AaABAg",
+                "content": { "content": "Thank you so much for watching!\nSee 12:53:20 for a fix." },
+                "publishedTime": "3 years ago",
+                "replyLevel": 0
+              },
+              "author": {
+                "channelId": "UC_ne_iOUtUPtKiBasvWgz_g",
+                "displayName": "@zubiarfan",
+                "avatarThumbnailUrl": "https://yt3.ggpht.com/avatar=s88",
+                "isVerified": false,
+                "isCreator": false
+              },
+              "toolbar": { "likeCountNotliked": "1.6K", "likeCountLiked": "1.6K", "replyCount": "46" }
+            }
+          }
+        },
+        {
+          "entityKey": "STATE_1",
+          "payload": { "engagementToolbarStateEntityPayload": { "key": "STATE_1", "heartState": "TOOLBAR_HEART_STATE_HEARTED" } }
+        },
+        {
+          "entityKey": "KEY_2",
+          "payload": {
+            "commentEntityPayload": {
+              "key": "KEY_2",
+              "properties": { "commentId": "Ugw5jddqTqA-kj1mBuN4AaABAg", "content": { "content": "Hi from the channel" }, "publishedTime": "1 day ago (edited)" },
+              "author": { "channelId": "UC8butISFwT-Wl7EV0hUK0BQ", "displayName": "@freecodecamp", "isCreator": true },
+              "toolbar": { "likeCountNotliked": " ", "replyCount": "" }
+            }
+          }
+        },
+        {
+          "entityKey": "STATE_2",
+          "payload": { "engagementToolbarStateEntityPayload": { "key": "STATE_2", "heartState": "TOOLBAR_HEART_STATE_UNHEARTED" } }
+        }
+      ]
+    }
+  }
+}

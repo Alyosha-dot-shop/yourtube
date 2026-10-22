@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=YourTube
+GenericName=YouTube client
+Comment=YouTube, owned by the people who watch it
+Exec=yourtube %U
+Icon=io.github.yourtube.YourTube
+Terminal=false
+Categories=AudioVideo;Video;Network;GTK;
+Keywords=youtube;video;subscriptions;mpv;
+MimeType=x-scheme-handler/yourtube;
+StartupWMClass=io.github.yourtube.YourTube

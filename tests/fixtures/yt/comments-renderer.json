@@ -1,0 +1,33 @@
+{
+  "onResponseReceivedEndpoints": [
+    {
+      "appendContinuationItemsAction": {
+        "continuationItems": [
+          {
+            "commentThreadRenderer": {
+              "comment": {
+                "commentRenderer": {
+                  "commentId": "UgxOld",
+                  "authorText": { "simpleText": "@someone" },
+                  "authorEndpoint": { "browseEndpoint": { "browseId": "UCabc" } },
+                  "authorThumbnail": { "thumbnails": [{ "url": "https://yt3.ggpht.com/a=s48", "width": 48 }, { "url": "https://yt3.ggpht.com/a=s88", "width": 88 }] },
+                  "contentText": { "runs": [{ "text": "Old style " }, { "text": "comment" }] },
+                  "publishedTimeText": { "runs": [{ "text": "5 years ago" }] },
+                  "voteCount": { "simpleText": "12" },
+                  "replyCount": 3,
+                  "pinnedCommentBadge": { "pinnedCommentBadgeRenderer": {} },
+                  "actionButtons": { "commentActionButtonsRenderer": { "creatorHeart": { "creatorHeartRenderer": { "isHearted": true } } } }
+                }
+              },
+              "replies": {
+                "commentRepliesRenderer": {
+                  "contents": [{ "continuationItemRenderer": { "continuationEndpoint": { "continuationCommand": { "token": "OLD_REPLIES" } } } }]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

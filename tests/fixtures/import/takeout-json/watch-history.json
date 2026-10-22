@@ -1,0 +1,39 @@
+[{
+  "header": "YouTube",
+  "title": "Watched How sourdough works",
+  "titleUrl": "https://www.youtube.com/watch?v=fixturevid4",
+  "subtitles": [{"name": "Fixture Baking", "url": "https://www.youtube.com/channel/UCfixturechannel00000002"}],
+  "time": "2026-10-21T11:04:05.123Z",
+  "products": ["YouTube"],
+  "activityControls": ["YouTube watch history"]
+},{
+  "header": "YouTube",
+  "title": "Watched Bread basics",
+  "titleUrl": "https://www.youtube.com/watch?v=fixturevid2",
+  "time": "2026-10-20T05:15:00Z",
+  "products": ["YouTube"]
+},{
+  "header": "YouTube",
+  "title": "Watched Buy our blender",
+  "titleUrl": "https://www.youtube.com/watch?v=fixtureadv1",
+  "time": "2026-10-21T11:00:00Z",
+  "products": ["YouTube"],
+  "details": [{"name": "From Google Ads"}]
+},{
+  "header": "YouTube",
+  "title": "Watched a video that has been removed",
+  "time": "2026-10-19T16:00:00Z",
+  "products": ["YouTube"]
+},{
+  "header": "YouTube Music",
+  "title": "Watched A song",
+  "titleUrl": "https://music.youtube.com/watch?v=fixturemus1",
+  "time": "2026-10-17T14:00:00Z",
+  "products": ["YouTube"]
+},{
+  "header": "Search",
+  "title": "Watched something on Google Search",
+  "titleUrl": "https://www.youtube.com/watch?v=fixturevidS",
+  "time": "2026-10-17T14:00:00Z",
+  "products": ["Search"]
+}]

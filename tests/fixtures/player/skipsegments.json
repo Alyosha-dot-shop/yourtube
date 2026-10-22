@@ -1,0 +1,20 @@
+[
+  {
+    "videoID": "someoneElse",
+    "hash": "6745aaaa",
+    "segments": [
+      {"category": "sponsor", "actionType": "skip", "segment": [1.0, 100.0], "UUID": "x", "videoDuration": 600}
+    ]
+  },
+  {
+    "videoID": "ourVideo123",
+    "hash": "6745bbbb",
+    "segments": [
+      {"category": "sponsor", "actionType": "skip", "segment": [61.2, 95.0], "UUID": "a", "votes": 4, "videoDuration": 812.3},
+      {"category": "intro", "actionType": "skip", "segment": [3.0, 12.5], "UUID": "b", "votes": 1, "videoDuration": 812.3},
+      {"category": "sponsor", "actionType": "mute", "segment": [200.0, 210.0], "UUID": "c", "videoDuration": 812.3},
+      {"category": "poi_highlight", "actionType": "poi", "segment": [300.0, 300.0], "UUID": "d", "videoDuration": 812.3},
+      {"category": "selfpromo", "actionType": "skip", "segment": [400.0, 400.4], "UUID": "e", "videoDuration": 812.3}
+    ]
+  }
+]

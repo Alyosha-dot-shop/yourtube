@@ -1,0 +1,29 @@
+{
+  "dQw4w9WgXcQ": {
+    "titles": [
+      { "title": ">Rick >Astley - Never Gonna Give You Up (Official Music Video)", "original": false, "votes": 1, "locked": true, "UUID": "b68a" },
+      { "title": "The video is unavailable", "original": false, "votes": 0, "locked": false, "UUID": "587e" }
+    ],
+    "thumbnails": [
+      { "timestamp": 3.92349, "original": false, "votes": 2, "locked": true, "UUID": "5a39" },
+      { "timestamp": null, "original": true, "votes": 9, "locked": false, "UUID": "0e58" }
+    ],
+    "randomTime": 0.5,
+    "videoDuration": 212
+  },
+  "originalWin": {
+    "titles": [{ "title": "Original title", "original": true, "votes": 5, "locked": false, "UUID": "a" }],
+    "thumbnails": [{ "timestamp": null, "original": true, "votes": 3, "locked": false, "UUID": "b" }],
+    "randomTime": 0.1,
+    "videoDuration": null
+  },
+  "downvoted": {
+    "titles": [
+      { "title": "CLICKBAIT!!", "original": false, "votes": -2, "locked": false, "UUID": "c" },
+      { "title": "The fair title", "original": false, "votes": 0, "locked": false, "UUID": "d" }
+    ],
+    "thumbnails": [],
+    "randomTime": 0.3,
+    "videoDuration": 0
+  }
+}

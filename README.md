@@ -14,6 +14,10 @@ servers, and I didn't want a browser-sized app just to watch a video. So I built
 runs on your computer, keeps everything in one SQLite file, and tells you why it recommends
 each video.
 
+I made it in the same spirit as [degoog](https://github.com/degoog-org/degoog) and the other
+de-Google projects that have been showing up lately: your own copy, running on your own
+machine, instead of a Google service.
+
 No account, no subscription, no tracking. It's free and GPL-licensed, so change it however
 you like.
 
@@ -33,6 +37,7 @@ you like.
 - **Themes**, accent colour, card size, your own CSS, and shortcuts you can rebind.
 - **From FreeTube**: SponsorBlock, downloads that play offline, sound-only mode, chapters,
   comments, Return YouTube Dislike and DeArrow.
+- **Tor**: searches and browsing can go through Tor (see below).
 - **Web version** for the rest of the house (see below).
 - **Export** everything to JSON, CSV and OPML.
 - **Bug reports**: Ctrl+Shift+B takes a screenshot and opens a filled-in GitHub issue.
@@ -121,6 +126,26 @@ and streams the videos through itself. A Raspberry Pi 4 or an old laptop is enou
 
 Without an address it only listens on the machine itself. Each browser picks its own profile
 and can turn on incognito.
+
+## Tor
+
+YourTube never signs in to Google and sends no tracking cookies, so YouTube can't attach what
+you do to a Google account or ad profile. It still sees your IP address, which is enough to
+link your searches to your home over time. Routing through Tor hides that too.
+
+With [Tor](https://www.torproject.org) running (on Arch: `sudo pacman -S tor` and
+`sudo systemctl enable --now tor`), go to Preferences → Network and set the proxy to
+`socks5h://127.0.0.1:9050`. Then searches, channel and video pages, subscription feeds,
+thumbnails, comments and SponsorBlock lookups go through Tor, and YouTube sees a Tor exit
+instead of you.
+
+Playback and downloads still come straight from YouTube by default, because YouTube blocks
+most video streams over Tor with "Sign in to confirm you're not a bot". So YouTube can see
+which videos your IP plays, but not what you searched for or browsed to find them. The switch
+under the proxy sends playback through Tor too, but expect most videos to fail.
+
+Tor makes pages a few seconds slower, and some requests fail when YouTube blocks an exit node.
+Trying again usually works.
 
 ## Keyboard
 

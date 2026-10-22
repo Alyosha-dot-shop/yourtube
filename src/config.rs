@@ -49,8 +49,12 @@ pub struct Config {
     pub autoplay: bool,
     /// Subtitle languages mpv should prefer, e.g. "en,de" (empty = none unless you turn them on).
     pub subtitles: String,
-    /// Proxy for every request YourTube, yt-dlp and mpv make (e.g. socks5h://127.0.0.1:9050).
+    /// Proxy for YouTube pages, searches, feeds, thumbnails and the extras (e.g. Tor at
+    /// socks5h://127.0.0.1:9050).
     pub proxy: Option<String>,
+    /// Also send playback and downloads through `proxy`. Off by default: YouTube refuses
+    /// most video streams over Tor ("confirm you're not a bot").
+    pub proxy_playback: bool,
 
     // SponsorBlock (sponsor.ajay.app): category → "skip", "ask" or "off".
     pub sponsorblock: bool,
@@ -112,6 +116,7 @@ impl Default for Config {
             autoplay: true,
             subtitles: String::new(),
             proxy: None,
+            proxy_playback: false,
             sponsorblock: true,
             sponsorblock_api: "https://sponsor.ajay.app".into(),
             sponsorblock_categories: SPONSORBLOCK_DEFAULTS.iter().map(|(k, _, v)| (k.to_string(), v.to_string())).collect(),
@@ -131,6 +136,11 @@ impl Default for Config {
 }
 
 impl Config {
+    /// The proxy for mpv, yt-dlp downloads and the web version's video relay, if playback should use it.
+    pub fn playback_proxy(&self) -> Option<String> {
+        self.proxy.clone().filter(|_| self.proxy_playback)
+    }
+
     /// The AI settings, if AI is on and complete.
     pub fn ai(&self) -> Option<AiConfig> {
         (self.ai_enabled && is_http(&self.ai_url) && !self.ai_model.trim().is_empty()).then(|| AiConfig {
@@ -186,6 +196,7 @@ pub fn parse(text: &str) -> Config {
             "autoplay" => c.autoplay = on(v),
             "subtitles" => c.subtitles = v.to_owned(),
             "proxy" if v.contains("://") => c.proxy = Some(v.to_owned()),
+            "proxy_playback" => c.proxy_playback = on(v),
             "sponsorblock" => c.sponsorblock = on(v),
             "sponsorblock_api" if is_http(v) => c.sponsorblock_api = v.trim_end_matches('/').to_owned(),
             k if k.starts_with("sponsorblock.") && ["skip", "ask", "off"].contains(&v) => {
@@ -230,11 +241,12 @@ pub fn render(c: &Config) -> String {
     );
     let yn = |b: bool| if b { "on" } else { "off" };
     s += &format!(
-        "\n# Playback\nspeed = {}\nautoplay = {}\nsubtitles = {}\nproxy = {}\n",
+        "\n# Playback\nspeed = {}\nautoplay = {}\nsubtitles = {}\nproxy = {}\nproxy_playback = {}\n",
         c.speed,
         yn(c.autoplay),
         c.subtitles,
-        c.proxy.as_deref().unwrap_or("")
+        c.proxy.as_deref().unwrap_or(""),
+        yn(c.proxy_playback)
     );
     s += &format!(
         "\n# SponsorBlock: skip, ask or off per category\nsponsorblock = {}\nsponsorblock_api = {}\n",
@@ -331,6 +343,7 @@ mod tests {
             autoplay: false,
             subtitles: "en,de".into(),
             proxy: Some("socks5h://127.0.0.1:9050".into()),
+            proxy_playback: true,
             dearrow: true,
             download_dir: Some("/tmp/v".into()),
             hide_views: true,

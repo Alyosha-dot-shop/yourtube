@@ -180,19 +180,21 @@ yourtube serve [ADDRESS]     run the web version
 
 ## Compared with FreeTube
 
-Same laptop (Linux, Intel graphics), measured with [`tools/bench.py`](tools/bench.py), except
-YourTube's playing numbers, which I took during normal use:
+Same laptop (Linux, Intel graphics), both measured with [`tools/bench.py`](tools/bench.py):
+three starts each on the main page, then 30 seconds of the same 1080p60 video.
 
 | | YourTube | FreeTube |
 |---|---|---|
-| Memory, main page | ~110 MB | ~510 MB |
-| Memory, playing 1080p60 | ~590 MB (mpv buffers ~6 min ahead) | ~690 MB |
-| CPU, playing 1080p60 | ~40% | ~140% |
+| Window appears after | ~0.3 s | ~0.9 s |
+| Memory, main page | ~75 MB | ~410 MB (peaks up to ~660 MB) |
+| Memory, playing | ~150 MB (with mpv) | ~530 MB (peaks up to ~740 MB) |
+| CPU, playing | ~10% | ~26% |
+| CPU time to start | ~0.3 s | ~9 s |
 | Processes | 1 (+ mpv while playing) | 8 |
-| On disk | 6 MB (+ mpv) | 333 MB |
-| Window appears after | ~3 s | ~4.4 s |
+| On disk | 8 MB (+ mpv) | 333 MB |
 
-CPU is per core, so 100% is one full core.
+CPU is per core, so 100% is one full core. The first YourTube start after a reboot takes
+about 0.6 s while the system loads GTK.
 
 ## Contributing
 

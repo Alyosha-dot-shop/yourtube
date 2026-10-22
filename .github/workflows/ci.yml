@@ -14,12 +14,12 @@ jobs:
     steps:
       - name: Install GTK, libadwaita, Rust, mpv and yt-dlp
         run: pacman -Syu --noconfirm --needed base-devel git gtk4 libadwaita rust mpv yt-dlp
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Test
         run: cargo test --locked
       - name: Build
         run: cargo build --release --locked
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: yourtube-linux-x86_64
           path: target/release/yourtube
@@ -28,7 +28,7 @@ jobs:
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install GTK and libadwaita
         run: brew install gtk4 libadwaita pkgconf mpv yt-dlp
       - uses: dtolnay/rust-toolchain@stable
@@ -36,7 +36,7 @@ jobs:
         run: cargo test --locked
       - name: Build
         run: cargo build --release --locked
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: yourtube-macos
           path: target/release/yourtube
@@ -48,7 +48,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -63,7 +63,7 @@ jobs:
         run: cargo test --locked
       - name: Build
         run: cargo build --release --locked
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: yourtube-windows-x86_64
           path: target/release/yourtube.exe

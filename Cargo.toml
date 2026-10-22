@@ -2,7 +2,7 @@
 name = "yourtube"
 version = "0.1.0"
 edition = "2024"
-description = "A YouTube client owned by its users: local data, mpv playback, open recommendations"
+description = "A YouTube app that keeps your history and recommendations on your own computer"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Alyosha-dot-shop/yourtube"
 

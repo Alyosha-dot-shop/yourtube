@@ -661,7 +661,7 @@ fn playback_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {
 
     let net = adw::PreferencesGroup::builder()
         .title("Network")
-        .description("Send everything YourTube, yt-dlp and mpv fetch through a proxy, for example Tor at socks5h://127.0.0.1:9050.")
+        .description("Send searches, pages, feeds and thumbnails through a proxy, for example Tor at socks5h://127.0.0.1:9050.")
         .build();
     let proxy = adw::EntryRow::builder().title("Proxy (empty for none)").text(c.proxy.clone().unwrap_or_default()).build();
     proxy.connect_changed(glib::clone!(
@@ -673,6 +673,12 @@ fn playback_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {
         }
     ));
     net.add(&proxy);
+    net.add(&switch(
+        edit,
+        "Playback and downloads through the proxy too",
+        "Off: videos come straight from YouTube. YouTube blocks most playback over Tor.",
+        |c| &mut c.proxy_playback,
+    ));
     page.add(&net);
     page
 }

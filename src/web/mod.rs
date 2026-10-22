@@ -332,7 +332,7 @@ impl App {
             td.1.notify_all();
         });
         App {
-            resolver: Arc::new(stream::Resolver::new(cfg.max_height, cfg.proxy.clone())),
+            resolver: Arc::new(stream::Resolver::new(cfg.max_height, cfg.playback_proxy())),
             default_profile: db::profile_name(),
             forced_incognito: db::incognito(),
             sessions: Sessions::new(Duration::from_secs(SESSION_DAYS * 86400)),

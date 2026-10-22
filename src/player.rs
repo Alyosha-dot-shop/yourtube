@@ -80,7 +80,7 @@ impl Options {
             speed: c.speed,
             autoplay: c.autoplay,
             subtitles: c.subtitles.clone(),
-            proxy: c.proxy.clone(),
+            proxy: c.playback_proxy(),
             max_height: c.max_height,
             audio_only: false,
             prefer_downloads: true,

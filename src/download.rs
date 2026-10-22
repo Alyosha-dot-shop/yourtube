@@ -73,7 +73,7 @@ impl Options {
             height: c.download_height,
             cut_sponsors: c.download_cut_sponsors && c.sponsorblock,
             dir: dir(c),
-            proxy: c.proxy.clone(),
+            proxy: c.playback_proxy(),
             subtitles: c.subtitles.clone(),
             sponsor_categories: c.sponsorblock_categories.iter().filter(|(_, v)| *v == "skip").map(|(k, _)| k.clone()).collect(),
             sponsorblock_api: c.sponsorblock_api.clone(),
@@ -635,6 +635,8 @@ mod tests {
         c.download_dir = Some("/tmp/dl".into());
         c.download_cut_sponsors = true;
         c.proxy = Some("socks5h://127.0.0.1:9050".into());
+        assert_eq!(Options::from_config(&c).proxy, None, "downloads skip the proxy unless proxy_playback is on");
+        c.proxy_playback = true;
         let mut o = Options::from_config(&c);
         assert_eq!(o.dir, PathBuf::from("/tmp/dl"));
         let a = ytdlp_args("-abc", &o).join(" ");

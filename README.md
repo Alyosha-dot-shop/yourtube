@@ -25,7 +25,8 @@ you like.
 
 - **For You**: Recommendations from all of YouTube, worked out on your computer from what you
   search and watch. Each pick says why it's there ("Because you searched…"). *More like this*
-  and *Not interested* change what comes next.
+  and *Not interested* change what comes next. An optional small model matches topics by
+  meaning, and `yourtube eval` measures how well it all predicts what you watch.
 - **Optional AI**: A small local model can suggest searches and sort the picks. Cloud models
   work too.
 - **Subscriptions**, newest first, without Shorts.
@@ -37,7 +38,8 @@ you like.
 - **Themes**, accent colour, card size, your own CSS, and shortcuts you can rebind.
 - **From FreeTube**: SponsorBlock, downloads that play offline, sound-only mode, chapters,
   comments, Return YouTube Dislike and DeArrow.
-- **Tor**: searches and browsing can go through Tor (see below).
+- **Tor**: Searches, browsing and even playback can go through Tor, each kind on its own
+  circuit (see below).
 - **Web version** for the rest of the house (see below).
 - **Export** everything to JSON, CSV and OPML.
 - **Bug reports**: Ctrl+Shift+B takes a screenshot and opens a filled-in GitHub issue.

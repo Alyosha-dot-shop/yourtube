@@ -414,6 +414,15 @@ fn run(item: &Item, o: &Options, h: &Handle, on_progress: &impl Fn(Update)) -> U
 
 fn download(item: &Item, o: &Options, h: &Handle, on_progress: &impl Fn(Update)) -> Result<Downloaded> {
     std::fs::create_dir_all(&o.dir)?;
+    // Through Tor, first find an exit YouTube lets through (see player::playable_circuit).
+    let tor;
+    let o = match o.proxy.as_deref().filter(|p| crate::player::is_socks(p)) {
+        Some(_) => {
+            tor = Options { proxy: Some(crate::player::playable_circuit(&item.id)?), ..o.clone() };
+            &tor
+        }
+        None => o,
+    };
     let mut cmd = crate::proc::ytdlp();
     cmd.args(ytdlp_args(&item.id, o))
         // Python on Windows otherwise prints in the console's code page.

@@ -11,6 +11,8 @@
 //! Alternatively For You can come from an external service (remote.rs).
 
 pub mod ai;
+pub mod embed;
+pub mod eval;
 pub mod profile;
 pub mod rank;
 pub mod remote;
@@ -41,6 +43,8 @@ pub struct Stats {
     pub failed_requests: usize,
     /// Set when AI was on but didn't work; the page is made without it.
     pub ai_error: Option<String>,
+    /// Set when the topic model was on but couldn't be downloaded; ranking goes on without it.
+    pub model_error: Option<String>,
 }
 
 enum Fetch {
@@ -102,8 +106,21 @@ pub fn refresh(cfg: &Config, say: impl Fn(&str)) -> Result<Stats> {
         stats.by_source.push((name, n));
     }
 
+    let model = if cfg.topic_model {
+        if !embed::installed() {
+            say("Downloading the topic model (30 MB, only once)…");
+            if let Err(e) = embed::install() {
+                stats.model_error = Some(e.to_string());
+            }
+        }
+        embed::load_installed()
+    } else {
+        None
+    };
+    let topics = model.as_ref().map(|m| rank::Topics { model: m, interests: embed::interests(m, &p, rank::INTERESTS) });
+
     say("Ranking…");
-    let mut ranked = rank::rank(&p, cands, now);
+    let mut ranked = rank::rank(&p, cands, now, topics.as_ref());
 
     if let (Some(ai), None) = (&ai_cfg, &stats.ai_error) {
         say("Asking the AI to order the best ones…");

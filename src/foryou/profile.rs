@@ -87,6 +87,9 @@ pub struct Profile {
     pub shown: HashMap<String, (i64, bool)>,
     /// Titles you said "not interested" to (for the AI prompt).
     pub disliked: Vec<String>,
+    /// Every search and watched title with the weight it got (negative for "not interested"),
+    /// for embedding-based matching.
+    pub texts: Vec<(String, f64)>,
 }
 
 impl Profile {
@@ -113,11 +116,15 @@ pub fn build(conn: &Connection, now: i64) -> Result<Profile> {
     // Searches: a fast-fading "lately" part plus a slow "for the long run" part.
     let mut by_query: HashMap<String, (String, f64, i64)> = HashMap::new();
     for (q, at) in crate::db::recent_searches(conn, now - LONG_SEARCH_WINDOW_DAYS * 86400)? {
+        if at >= now {
+            continue; // `now` can be a past moment (yourtube eval): nothing after it counts
+        }
         let mut w = LONG_SEARCH_WEIGHT * decay(now - at, LONG_SEARCH_HALF_LIFE_DAYS);
         if now - at <= SEARCH_WINDOW_DAYS * 86400 {
             w += SEARCH_WEIGHT * decay(now - at, SEARCH_HALF_LIFE_DAYS);
         }
         p.add_terms(&q, w);
+        p.texts.push((q.clone(), w));
         let e = by_query.entry(q.to_lowercase()).or_insert((q.clone(), 0.0, at));
         e.1 += w;
         e.2 = e.2.max(at);
@@ -142,12 +149,17 @@ pub fn build(conn: &Connection, now: i64) -> Result<Profile> {
     })?;
     for row in rows {
         let (id, title, channel, at, pos, len) = row?;
+        if at >= now {
+            continue;
+        }
         let completion = match len {
             Some(l) if l > 0.0 => (pos / l).clamp(0.0, 1.0),
-            // Length unknown (much of an imported history): judge by the position alone.
+            // Length unknown: judge by the position alone.
             _ if pos > 120.0 => 0.7,
-            _ if pos > 0.0 => 0.4,
-            _ => 0.3,
+            // Imported history (Google Takeout) only says you opened it: neutral, neither a
+            // full watch nor a skip.
+            _ if pos <= 1.0 => 0.5,
+            _ => 0.4,
         };
         p.seen.insert(id.clone(), completion >= 0.5);
         if now - at > WATCH_WINDOW_DAYS * 86400 {
@@ -155,6 +167,7 @@ pub fn build(conn: &Connection, now: i64) -> Result<Profile> {
         }
         let w = (0.25 + completion) * decay(now - at, WATCH_HALF_LIFE_DAYS);
         p.add_terms(&title, w);
+        p.texts.push((title.clone(), w));
         if let Some(c) = channel.filter(|c| !c.is_empty()) {
             *p.channels.entry(c).or_default() += w;
         }
@@ -164,7 +177,9 @@ pub fn build(conn: &Connection, now: i64) -> Result<Profile> {
             }
         }
         if completion >= 0.4 {
-            p.seeds.push(Seed { id, title, weight: w });
+            // Watches with known progress make better seeds than imported "opened it" rows.
+            let known = len.is_some_and(|l| l > 0.0);
+            p.seeds.push(Seed { id, title, weight: if known { w } else { 0.6 * w } });
         }
     }
     p.seeds.sort_by(|a, b| b.weight.total_cmp(&a.weight));
@@ -179,20 +194,23 @@ pub fn build(conn: &Connection, now: i64) -> Result<Profile> {
     }
 
     // Feedback never decays: you said it on purpose.
-    let mut st = conn.prepare("SELECT video_id, channel_id, COALESCE(title, ''), kind FROM rec_feedback")?;
-    let rows =
-        st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))?;
+    let mut st = conn.prepare("SELECT video_id, channel_id, COALESCE(title, ''), kind FROM rec_feedback WHERE at < ?1")?;
+    let rows = st.query_map([now], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+    })?;
     for row in rows {
         let (id, channel, title, kind) = row?;
         match kind.as_str() {
             "more" => {
                 p.add_terms(&title, 2.0);
+                p.texts.push((title.clone(), 2.0));
                 if let Some(c) = channel {
                     *p.channels.entry(c).or_default() += 2.0;
                 }
             }
             "not_interested" => {
                 p.add_terms(&title, -1.0);
+                p.texts.push((title.clone(), -1.0));
                 p.hidden.insert(id);
                 p.disliked.push(title);
             }

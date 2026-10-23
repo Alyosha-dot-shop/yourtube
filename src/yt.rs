@@ -155,6 +155,12 @@ pub fn isolated_proxy(proxy: &str, tag: &str) -> String {
     format!("{scheme}://yt-{tag}-{run}:x@{rest}")
 }
 
+/// A fresh agent on its own Tor circuit named `tag` (for retries on another exit), allowing
+/// `timeout` for the whole request (big downloads). Not cached.
+pub fn agent_tagged(tag: &str, timeout: Duration) -> ureq::Agent {
+    build_agent_with(crate::config::load().proxy.map(|p| isolated_proxy(&p, tag)).as_deref(), timeout)
+}
+
 /// The HTTP agent for a request to `url`: see [`agent_for`].
 pub fn agent_for_url(url: &str) -> ureq::Agent {
     agent_for(Purpose::of(url))
@@ -178,7 +184,11 @@ pub fn agent_for(purpose: Purpose) -> ureq::Agent {
 }
 
 fn build_agent(proxy: Option<&str>) -> ureq::Agent {
-    let mut builder = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(20))).user_agent(UA);
+    build_agent_with(proxy, Duration::from_secs(20))
+}
+
+fn build_agent_with(proxy: Option<&str>, timeout: Duration) -> ureq::Agent {
+    let mut builder = ureq::Agent::config_builder().timeout_global(Some(timeout)).user_agent(UA);
     if let Some(p) = proxy {
         // If the configured proxy can't be parsed we must not quietly go direct:
         // someone who set up Tor expects nothing to leave without it. Point at a

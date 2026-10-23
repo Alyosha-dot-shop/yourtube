@@ -20,6 +20,17 @@ use crate::feed::Video;
 use std::collections::{HashMap, HashSet};
 
 pub const PAGE: usize = 60;
+/// With the topic model: how many of your searches and watched titles count as interests,
+/// and how much the nearest one adds. 0.30 gave the best balance in `yourtube eval` on real
+/// history (AUC 0.72 → 0.81 with recall@100 about the same; 0.45 and up lost recall).
+pub const INTERESTS: usize = 300;
+pub const NEAREST_WEIGHT: f64 = 0.30;
+
+/// The topic model and your interests in its terms, when the model is on.
+pub struct Topics<'a> {
+    pub model: &'a super::embed::Model,
+    pub interests: Vec<(Vec<f32>, f32)>,
+}
 const MAX_PER_CHANNEL: usize = 2;
 /// At most this many picks for the same reason (one search, one related video).
 const MAX_PER_REASON: usize = 4;
@@ -134,33 +145,66 @@ fn merge(p: &Profile, cands: Vec<Candidate>) -> Vec<(Candidate, f64)> {
     by_id.into_values().collect()
 }
 
-pub fn rank(p: &Profile, cands: Vec<Candidate>, now: i64) -> Vec<Scored> {
+/// The personal part of the score: how well a title matches your interests (TF-IDF cosine,
+/// with IDF over the titles being compared) and how much you watch its channel.
+pub struct Taste<'a> {
+    p: &'a Profile,
+    df: HashMap<String, f64>,
+    n: f64,
+    pnorm: f64,
+    max_ch: f64,
+}
+
+impl<'a> Taste<'a> {
+    pub fn new(p: &'a Profile, docs: &[HashSet<String>]) -> Self {
+        let mut df: HashMap<String, f64> = HashMap::new();
+        for d in docs {
+            for t in d {
+                *df.entry(t.clone()).or_default() += 1.0;
+            }
+        }
+        let mut s = Taste { p, df, n: docs.len() as f64, pnorm: 1.0, max_ch: 1.0 };
+        s.pnorm = p.terms.iter().filter(|(_, w)| **w > 0.0).map(|(t, w)| (w * s.idf(t)).powi(2)).sum::<f64>().sqrt().max(1e-9);
+        s.max_ch = p.channels.values().cloned().fold(0.0, f64::max).max(1e-9);
+        s
+    }
+
+    fn idf(&self, t: &str) -> f64 {
+        ((self.n + 1.0) / (self.df.get(t).copied().unwrap_or(0.0) + 1.0)).ln() + 1.0
+    }
+
+    /// Topic match of a title's words, -1 to 1.
+    pub fn taste(&self, toks: &HashSet<String>) -> f64 {
+        let cnorm: f64 = toks.iter().map(|t| self.idf(t).powi(2)).sum::<f64>().sqrt().max(1e-9);
+        let dot: f64 = toks.iter().map(|t| self.p.terms.get(t).copied().unwrap_or(0.0) * self.idf(t) * self.idf(t)).sum();
+        (dot / (self.pnorm * cnorm)).clamp(-1.0, 1.0)
+    }
+
+    /// Channel affinity, 0 to 1.
+    pub fn channel(&self, channel_id: &str) -> f64 {
+        (1.0 + self.p.channels.get(channel_id).copied().unwrap_or(0.0)).ln() / (1.0 + self.max_ch).ln()
+    }
+}
+
+pub fn rank(p: &Profile, cands: Vec<Candidate>, now: i64, topics: Option<&Topics>) -> Vec<Scored> {
     let cands = merge(p, cands);
     if cands.is_empty() {
         return Vec::new();
     }
     // IDF over the candidate titles: words in every title say little.
     let docs: Vec<HashSet<String>> = cands.iter().map(|(c, _)| tokens(&c.video.title).into_iter().collect()).collect();
-    let mut df: HashMap<String, f64> = HashMap::new();
-    for d in &docs {
-        for t in d {
-            *df.entry(t.clone()).or_default() += 1.0;
-        }
-    }
-    let n = docs.len() as f64;
-    let idf = |t: &str| ((n + 1.0) / (df.get(t).copied().unwrap_or(0.0) + 1.0)).ln() + 1.0;
-    let pnorm: f64 = p.terms.iter().filter(|(_, w)| **w > 0.0).map(|(t, w)| (w * idf(t)).powi(2)).sum::<f64>().sqrt().max(1e-9);
-    let max_ch = p.channels.values().cloned().fold(0.0, f64::max).max(1e-9);
+    let t = Taste::new(p, &docs);
 
     let mut scored: Vec<(Scored, HashSet<String>)> = cands
         .into_iter()
         .zip(docs)
         .map(|((c, bonus), toks)| {
             let v = c.video;
-            let cnorm: f64 = toks.iter().map(|t| idf(t).powi(2)).sum::<f64>().sqrt().max(1e-9);
-            let dot: f64 = toks.iter().map(|t| p.terms.get(t).copied().unwrap_or(0.0) * idf(t) * idf(t)).sum();
-            let taste = (dot / (pnorm * cnorm)).clamp(-1.0, 1.0);
-            let channel = (1.0 + p.channels.get(&v.channel_id).copied().unwrap_or(0.0)).ln() / (1.0 + max_ch).ln();
+            let mut taste = t.taste(&toks);
+            if let Some(tp) = topics {
+                taste = (0.45 * taste + NEAREST_WEIGHT * super::embed::nearest(&tp.interests, &tp.model.encode(&v.title))) / 0.45;
+            }
+            let channel = t.channel(&v.channel_id);
             let fresh = if v.published > 0 { (-((now - v.published).max(0) as f64 / 86400.0) / 21.0).exp() } else { 0.3 };
             let quality = v.views.map_or(0.3, |n| ((n as f64 + 1.0).log10() / 7.0).min(1.0));
             let mut score = 0.45 * taste + 0.15 * c.source.strength() + 0.15 * channel + 0.15 * fresh + 0.10 * quality + bonus;
@@ -281,7 +325,7 @@ mod tests {
                 source: src(),
             });
         }
-        let r = rank(&p, cands, 1_000_000);
+        let r = rank(&p, cands, 1_000_000, None);
         let ids: Vec<&str> = r.iter().map(|s| s.video.id.as_str()).collect();
         assert_eq!(ids[0], "a", "{ids:?}");
         assert!(!ids.iter().any(|i| ["hidden", "blk", "seen", "short"].contains(i)), "{ids:?}");
@@ -303,7 +347,7 @@ mod tests {
                 source: Source::Related { seed: "x".into(), weight: 0.1 },
             });
         }
-        let r = rank(&p, cands, 1_000_000);
+        let r = rank(&p, cands, 1_000_000, None);
         let n: HashSet<&str> = r.iter().map(|s| s.video.id.as_str()).collect();
         assert_eq!(n.len(), r.len(), "no duplicates");
         let disc = r.iter().filter(|s| !s.subscribed).count();

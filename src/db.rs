@@ -186,6 +186,17 @@ pub fn init(conn: &Connection) -> Result<()> {
              clicked INTEGER NOT NULL DEFAULT 0,
              last_run INTEGER NOT NULL DEFAULT 0
          );
+         -- Every For You pick that was shown, with where and why, and whether it was opened:
+         -- what `yourtube eval` and any later tuning of the score's weights learn from.
+         CREATE TABLE IF NOT EXISTS rec_impressions (
+             run_at INTEGER NOT NULL,
+             video_id TEXT NOT NULL,
+             rank INTEGER NOT NULL,
+             reason TEXT NOT NULL,
+             shown_at INTEGER NOT NULL,
+             clicked_at INTEGER,
+             PRIMARY KEY (run_at, video_id)
+         );
          CREATE TABLE IF NOT EXISTS rec_picks (
              rank INTEGER PRIMARY KEY,
              video_id TEXT NOT NULL,
@@ -533,6 +544,11 @@ pub fn mark_shown(conn: &Connection, ids: &[String], run_at: i64) -> Result<()> 
              ON CONFLICT(video_id) DO UPDATE SET times = times + 1, last_run = ?2 WHERE rec_shown.last_run != ?2",
             params![id, run_at],
         )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO rec_impressions (run_at, video_id, rank, reason, shown_at)
+             SELECT run_at, video_id, rank, reason, ?3 FROM rec_picks WHERE video_id = ?1 AND run_at = ?2",
+            params![id, run_at, now()],
+        )?;
     }
     tx.commit()?;
     Ok(())
@@ -560,6 +576,11 @@ pub fn mark_clicked(conn: &Connection, id: &str) -> Result<()> {
         return Ok(());
     }
     conn.execute("INSERT INTO rec_shown (video_id, clicked) VALUES (?1, 1) ON CONFLICT(video_id) DO UPDATE SET clicked = 1", [id])?;
+    conn.execute(
+        "UPDATE rec_impressions SET clicked_at = ?2
+         WHERE video_id = ?1 AND clicked_at IS NULL AND run_at = (SELECT MAX(run_at) FROM rec_impressions WHERE video_id = ?1)",
+        params![id, now()],
+    )?;
     Ok(())
 }
 
@@ -597,6 +618,28 @@ pub fn remove_feedback(conn: &Connection, video_id: &str, kind: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn impressions_are_logged_once_and_clicks_land() {
+        let conn = Connection::open_in_memory().unwrap();
+        init(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO rec_picks (rank, video_id, title, reason, run_at) VALUES (0, 'a', 'A', 'Because you searched x', 100), (1, 'b', 'B', 'Related to y', 100);",
+        )
+        .unwrap();
+        let ids = vec!["a".to_owned(), "b".to_owned()];
+        mark_shown(&conn, &ids, 100).unwrap();
+        mark_shown(&conn, &ids, 100).unwrap();
+        mark_clicked(&conn, "b").unwrap();
+        let rows: Vec<(String, i64, String, bool)> = conn
+            .prepare("SELECT video_id, rank, reason, clicked_at IS NOT NULL FROM rec_impressions ORDER BY rank")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(rows, vec![("a".into(), 0, "Because you searched x".into(), false), ("b".into(), 1, "Related to y".into(), true)]);
+    }
 
     #[test]
     fn deleted_history_leaves_no_trace_in_the_file() {

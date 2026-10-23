@@ -1,0 +1,180 @@
+# Flatpak build of YourTube with everything it needs inside: mpv, yt-dlp and Deno.
+#
+#   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.yourtube.YourTube.yml
+#   flatpak run io.github.yourtube.YourTube
+#
+# The mpv, FFmpeg and yt-dlp modules follow Celluloid's Flathub manifest (which keeps them
+# current), except that YourTube needs the mpv program rather than libmpv. After changing
+# Cargo.lock, regenerate the Rust sources with flatpak-builder-tools' cargo generator:
+#   flatpak-cargo-generator.py ../../Cargo.lock -o cargo-sources.json
+
+app-id: io.github.yourtube.YourTube
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: yourtube
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # Downloads are saved here (and only here).
+  - --filesystem=xdg-videos/YourTube:create
+  - --env=YT_DLP_JS_RUNTIME=deno
+  - --env=LC_NUMERIC=C
+
+modules:
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dbuild-date=false
+      - -Dalsa=disabled
+      - -Dlua=enabled
+      - -Dlibmpv=false
+      - -Dcplayer=true
+      - -Dmanpage-build=disabled
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share/applications
+      - /share/bash-completion
+      - /share/doc
+      - /share/icons
+      - /share/man
+      - /share/zsh
+      - /share/fish
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+    modules:
+      # mpv's YouTube support (the ytdl hook) is a Lua script.
+      - lua5.1/lua-5.1.5.json
+
+      - name: ffmpeg
+        cleanup:
+          - /include
+          - /lib/pkgconfig
+          - /share/ffmpeg/examples
+        config-opts:
+          - --enable-shared
+          - --disable-static
+          - --enable-gnutls
+          - --enable-gpl
+          - --disable-doc
+          - --disable-programs
+          - --disable-encoders
+          - --disable-muxers
+          - --enable-encoder=png
+          - --enable-libdav1d
+        sources:
+          - type: archive
+            url: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+            sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+
+      - name: libass
+        cleanup:
+          - /include
+          - /lib/*.la
+          - /lib/pkgconfig
+        config-opts:
+          - --disable-static
+        sources:
+          - type: archive
+            url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz
+            sha256: 2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc
+
+      - name: uchardet
+        buildsystem: cmake-ninja
+        config-opts:
+          - -DCMAKE_BUILD_TYPE=Release
+          - -DBUILD_STATIC=0
+          - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        cleanup:
+          - /bin
+          - /include
+          - /lib/pkgconfig
+          - /share/man
+          - /lib/cmake
+        sources:
+          - type: archive
+            url: https://www.freedesktop.org/software/uchardet/releases/uchardet-0.0.8.tar.xz
+            sha256: e97a60cfc00a1c147a674b097bb1422abd9fa78a2d9ce3f3fdcc2e78a34ac5f0
+
+      - name: libplacebo
+        buildsystem: meson
+        cleanup:
+          - /include
+          - /lib/pkgconfig
+        sources:
+          - type: git
+            url: https://github.com/haasn/libplacebo.git
+            tag: v7.360.1
+            commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
+
+  - name: deno
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 deno /app/bin/deno
+    sources:
+      - type: archive
+        url: https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip
+        sha256: c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490
+        only-arches: [x86_64]
+      - type: archive
+        url: https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-unknown-linux-gnu.zip
+        sha256: c832298b1ad4422481334855f6003e0f54145762c5a134f20a489511d2f65bbf
+        only-arches: [aarch64]
+
+  - name: yt-dlp
+    modules:
+      - name: yt-dlp-ejs
+        buildsystem: simple
+        build-commands:
+          - pip3 install --prefix=/app yt_dlp_ejs*.whl
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/e3/bd/520769863744b669440a924271a6159ddd82ad5ae26b4ac4d4b69e9f8d44/yt_dlp_ejs-0.8.0-py3-none-any.whl
+            sha256: 79300e5fca7f937a1eeede11f0456862c1b41107ce1d726871e0207424f4bdb4
+    no-autogen: true
+    no-make-install: true
+    make-args:
+      - yt-dlp
+      - PYTHON=/usr/bin/python3
+    post-install:
+      - install yt-dlp /app/bin
+    sources:
+      - type: git
+        url: https://github.com/yt-dlp/yt-dlp.git
+        tag: 2026.08.19
+        commit: 3a08beaf031ab68f966401ead017ac81fe8486cf
+
+  - name: yourtube
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/yourtube/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline build --release --locked
+      - install -Dm755 target/release/yourtube /app/bin/yourtube
+      - install -Dm644 data/io.github.yourtube.YourTube.desktop -t /app/share/applications
+      - install -Dm644 data/io.github.yourtube.YourTube.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 data/icons/io.github.yourtube.YourTube.svg -t /app/share/icons/hicolor/scalable/apps
+      - install -Dm644 data/icons/io.github.yourtube.YourTube-symbolic.svg -t /app/share/icons/hicolor/symbolic/apps
+    sources:
+      # This checkout (for building locally). For Flathub, a tagged git source replaces it.
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - build-dir
+          - .flatpak-builder
+          - research_notes
+          - reports
+      - cargo-sources.json

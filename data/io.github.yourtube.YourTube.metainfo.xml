@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.yourtube.YourTube</id>
+  <name>YourTube</name>
+  <summary>Watch YouTube with your history kept on your computer</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.alyosha-dot-shop">
+    <name>Alyosha</name>
+  </developer>
+  <description>
+    <p>
+      YourTube is a YouTube app that keeps your watch history and recommendations on your own
+      computer, with no account. Every recommendation says why it is there.
+    </p>
+    <ul>
+      <li>Recommendations made on your computer from what you search and watch</li>
+      <li>SponsorBlock, downloads, chapters, comments, profiles and incognito</li>
+      <li>Optional routing through Tor, with a separate circuit per kind of request</li>
+      <li>A web version for the other devices in your home</li>
+      <li>Import from Google Takeout, NewPipe and FreeTube; export everything</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.yourtube.YourTube.desktop</launchable>
+  <url type="homepage">https://github.com/Alyosha-dot-shop/yourtube</url>
+  <url type="bugtracker">https://github.com/Alyosha-dot-shop/yourtube/issues</url>
+  <content_rating type="oars-1.1" />
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <releases>
+    <release version="0.1.1" date="2026-10-23" />
+    <release version="0.1.0" date="2026-10-23" />
+  </releases>
+</component>

@@ -1,0 +1,33 @@
+# Maintainer: Alyosha <alyosha at byalyosha dot com>
+#
+# The prebuilt release from GitHub (built and attested by the release workflow).
+# Update: bump pkgver, run `updpkgsums` and `makepkg --printsrcinfo > .SRCINFO`.
+
+pkgname=yourtube-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A YouTube app that keeps your history and recommendations on your own computer"
+arch=('x86_64')
+url="https://github.com/Alyosha-dot-shop/yourtube"
+license=('GPL-3.0-or-later')
+depends=('gtk4' 'libadwaita' 'mpv' 'yt-dlp' 'deno' 'gcc-libs' 'glibc')
+optdepends=('tor: send searches, browsing and optionally playback through Tor')
+provides=('yourtube')
+conflicts=('yourtube')
+options=('!debug')
+_raw="https://raw.githubusercontent.com/Alyosha-dot-shop/yourtube/v${pkgver}"
+source=("yourtube-${pkgver}::${url}/releases/download/v${pkgver}/yourtube-linux-x86_64"
+        "${_raw}/data/io.github.yourtube.YourTube.desktop"
+        "${_raw}/data/icons/io.github.yourtube.YourTube.svg"
+        "${_raw}/data/icons/io.github.yourtube.YourTube-symbolic.svg")
+sha256sums=('cbe563f85530bd9c3b9f1329725c11da0b491ac33c5ee731e4b14e75d20de7d8'
+            'bfb22f03127a0b1c46335a6bcc1c7e5da8199f636386524a743f0bd7289f2761'
+            '06b82b1a4ce750526efd30c1dda4c57449493589b86defd8f3c601c0795a70b5'
+            '3b05cccb6e7e785e2513b094c6c82d93ee5e5ad379e4b6f491a40dfd2d1c0777')
+
+package() {
+    install -Dm755 "yourtube-${pkgver}" "${pkgdir}/usr/bin/yourtube"
+    install -Dm644 io.github.yourtube.YourTube.desktop -t "${pkgdir}/usr/share/applications"
+    install -Dm644 io.github.yourtube.YourTube.svg -t "${pkgdir}/usr/share/icons/hicolor/scalable/apps"
+    install -Dm644 io.github.yourtube.YourTube-symbolic.svg -t "${pkgdir}/usr/share/icons/hicolor/symbolic/apps"
+}

@@ -934,7 +934,13 @@ fn build(gapp: &adw::Application) -> Rc<App> {
     home_tab.set_title("Home");
     home_tab.set_icon(Some(&gio::ThemedIcon::new("go-home-symbolic")));
     app.tab_view.set_page_pinned(&home_tab, true);
-    let tab_bar = adw::TabBar::builder().view(&app.tab_view).autohide(true).build();
+    // Shown only once there's a second tab (autohide still shows a lone pinned Home tab).
+    let tab_bar = adw::TabBar::builder().view(&app.tab_view).autohide(false).visible(false).build();
+    app.tab_view.connect_n_pages_notify(glib::clone!(
+        #[weak]
+        tab_bar,
+        move |v| tab_bar.set_visible(v.n_pages() > 1)
+    ));
     let tabbed = gtk::Box::new(gtk::Orientation::Vertical, 0);
     tabbed.append(&tab_bar);
     tabbed.append(&app.tab_view);

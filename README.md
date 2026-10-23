@@ -49,13 +49,18 @@ It's one GTK 4 window, and videos play in [mpv](https://mpv.io).
 ## Download
 
 Ready-made builds are on the
-[Releases page](https://github.com/Alyosha-dot-shop/yourtube/releases). Every platform also
-needs [mpv](https://mpv.io) (plays the videos), [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-(finds them) and [Deno](https://deno.com) (yt-dlp needs it for YouTube).
+[Releases page](https://github.com/Alyosha-dot-shop/yourtube/releases). Apart from the
+Flatpak, which has everything inside, each one also needs [mpv](https://mpv.io) (plays the
+videos), [yt-dlp](https://github.com/yt-dlp/yt-dlp) (finds them) and [Deno](https://deno.com)
+(yt-dlp needs it for YouTube).
 
 - **Windows**: unzip `yourtube-windows-x86_64.zip` and run `YourTube\yourtube.exe`. GTK comes
   inside the zip; install mpv, yt-dlp and Deno so they're on your PATH.
-- **Linux**: `yourtube-linux-x86_64` needs GTK 4.20+ and libadwaita 1.8+, which recent
+- **Linux, any distribution (Flatpak)**: download `yourtube-linux-x86_64.flatpak`, then
+  `flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
+  and `flatpak install --user yourtube-linux-x86_64.flatpak`. mpv, yt-dlp and Deno come inside,
+  so nothing else is needed. Downloads are saved to `~/Videos/YourTube`.
+- **Linux, plain program**: `yourtube-linux-x86_64` needs GTK 4.20+ and libadwaita 1.8+, which recent
   distributions have. On Arch: `sudo pacman -S gtk4 libadwaita mpv yt-dlp deno`, then
   `chmod +x yourtube-linux-x86_64` and run it.
 - **macOS** (Apple Silicon): `brew install gtk4 libadwaita mpv yt-dlp deno`, then

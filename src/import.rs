@@ -271,7 +271,7 @@ impl TempFile {
     fn new(bytes: &[u8]) -> Result<Self> {
         use std::io::Write;
         let mut r = [0u8; 12];
-        getrandom::getrandom(&mut r).map_err(|e| anyhow::anyhow!("no randomness: {e}"))?;
+        getrandom::fill(&mut r).map_err(|e| anyhow::anyhow!("no randomness: {e}"))?;
         let name: String = r.iter().map(|b| format!("{b:02x}")).collect();
         let path = crate::proc::run_dir().join(format!("import-{name}.db"));
         let mut opts = std::fs::OpenOptions::new();

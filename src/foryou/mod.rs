@@ -159,7 +159,7 @@ pub fn refresh(cfg: &Config, say: impl Fn(&str)) -> Result<Stats> {
 fn fetch_all(mut jobs: Vec<Fetch>, paced: bool) -> (Vec<Candidate>, usize) {
     let random = |n: u64| {
         let mut b = [0u8; 8];
-        let _ = getrandom::getrandom(&mut b);
+        let _ = getrandom::fill(&mut b);
         u64::from_le_bytes(b) % n.max(1)
     };
     for i in (1..jobs.len()).rev() {

@@ -55,6 +55,8 @@ pub struct Config {
     /// Also send playback and downloads through `proxy`. Off by default: YouTube refuses
     /// most video streams over Tor ("confirm you're not a bot").
     pub proxy_playback: bool,
+    /// For You matches topics with a small local model (downloaded once, ~30 MB).
+    pub topic_model: bool,
 
     // SponsorBlock (sponsor.ajay.app): category → "skip", "ask" or "off".
     pub sponsorblock: bool,
@@ -117,6 +119,7 @@ impl Default for Config {
             subtitles: String::new(),
             proxy: None,
             proxy_playback: false,
+            topic_model: false,
             sponsorblock: true,
             sponsorblock_api: "https://sponsor.ajay.app".into(),
             sponsorblock_categories: SPONSORBLOCK_DEFAULTS.iter().map(|(k, _, v)| (k.to_string(), v.to_string())).collect(),
@@ -200,6 +203,7 @@ pub fn parse(text: &str) -> Config {
             "subtitles" => c.subtitles = v.to_owned(),
             "proxy" if v.contains("://") => c.proxy = Some(v.to_owned()),
             "proxy_playback" => c.proxy_playback = on(v),
+            "topic_model" => c.topic_model = on(v),
             "sponsorblock" => c.sponsorblock = on(v),
             "sponsorblock_api" if is_http(v) => c.sponsorblock_api = v.trim_end_matches('/').to_owned(),
             k if k.starts_with("sponsorblock.") && ["skip", "ask", "off"].contains(&v) => {
@@ -286,6 +290,7 @@ pub fn render(c: &Config) -> String {
     if let Some(r) = &c.recommender {
         s += &format!("\n# For You from an external recommender instead of the built-in one.\nrecommender = {r}\n");
     }
+    s += &format!("\n# For You matches topics with a small local model (downloaded once, ~30 MB).\ntopic_model = {}\n", yn(c.topic_model));
     s
 }
 
@@ -347,6 +352,7 @@ mod tests {
             subtitles: "en,de".into(),
             proxy: Some("socks5h://127.0.0.1:9050".into()),
             proxy_playback: true,
+            topic_model: true,
             dearrow: true,
             download_dir: Some("/tmp/v".into()),
             hide_views: true,

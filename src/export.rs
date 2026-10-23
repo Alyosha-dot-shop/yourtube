@@ -126,6 +126,7 @@ pub fn export_all(conn: &Connection, folder: &Path) -> Result<Summary> {
         "searches": searches.iter().map(|r| json!({"query": r[0], "at": iso(&r[1])})).collect::<Vec<_>>(),
         "playlists": playlists,
         "feedback": objects(conn, "SELECT video_id, channel_id, title, kind, at FROM rec_feedback ORDER BY at DESC", &["video_id", "channel_id", "title", "kind", "at"])?,
+        "for_you_shown": objects(conn, "SELECT run_at, video_id, rank, reason, shown_at, clicked_at FROM rec_impressions ORDER BY shown_at DESC", &["run_at", "video_id", "rank", "reason", "shown_at", "clicked_at"])?,
         "hidden_channels": objects(conn, "SELECT channel_id, name, at FROM blocked_channels ORDER BY at DESC", &["channel_id", "name", "at"])?,
     });
     std::fs::write(dir.join("yourtube-data.json"), serde_json::to_string_pretty(&all)?)?;
@@ -183,6 +184,8 @@ pub fn forget_searches(conn: &Connection, one: Option<(&str, i64)>) -> Result<us
 /// Delete all watch history, the thumbnails (named by video id) and the traces in the database file.
 pub fn clear_history(conn: &Connection) -> Result<usize> {
     let n = conn.execute("DELETE FROM history", [])?;
+    // What For You showed you and what you opened says much the same.
+    conn.execute_batch("DELETE FROM rec_impressions; DELETE FROM rec_shown;")?;
     crate::db::compact(conn)?;
     crate::thumbs::clear();
     Ok(n)

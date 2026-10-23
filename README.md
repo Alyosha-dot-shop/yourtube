@@ -89,6 +89,29 @@ The code is in [`src/foryou/`](src/foryou).
 
 Half-watched videos come first.
 
+### Matching by meaning (optional)
+
+Word matching misses that "home server build" and "self-hosting on an old PC" are the same
+topic. Preferences → For You → *Match topics by meaning* downloads a small model once
+([potion-base-8M](https://huggingface.co/minishlab/potion-base-8M), 30 MB, MIT, pinned and
+checksum-checked) and runs it on your computer. Each video is then also scored by how close it
+is to the nearest of your 300 strongest searches and watched titles.
+
+### Measuring it
+
+`yourtube eval` checks how well the scoring predicts what you actually watched: for each of the
+last 8 weeks it builds your profile from what came before, then scores the videos you watched
+that week against 1,000 random ones you didn't. On my own history (about 17,900 watches):
+
+| Scoring | AUC | Recall@100 |
+|---|---|---|
+| Random | 0.50 | 0.10 |
+| Words and channels (default) | 0.73 | 0.57 |
+| With the meaning model | 0.82 | 0.54 |
+
+AUC is the chance a real watch scores above a random video. Every change to the scoring gets
+checked against this first.
+
 ### AI
 
 In Preferences, AI can suggest new searches and sort the top 40 videos. Anything with an
@@ -217,6 +240,7 @@ yourtube <link or video id>  play it
 yourtube import <file>       import a Takeout zip, NewPipe or FreeTube export
 yourtube refresh             update subscriptions
 yourtube foryou              rebuild For You
+yourtube eval [WEEKS]        how well For You predicts what you watch
 yourtube play VIDEO_ID       play one video from where you left off
 yourtube serve [ADDRESS]     run the web version
 ```

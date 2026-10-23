@@ -5,6 +5,7 @@
 //!   yourtube import [PATH]   import a Google Takeout zip, NewPipe or FreeTube export
 //!   yourtube refresh         refresh the subscription feed from the command line
 //!   yourtube foryou          rebuild the For You page from the command line
+//!   yourtube eval [WEEKS]    how well For You's scoring predicts what you watched
 //!   yourtube serve           run the web version for your home network
 //!   yourtube play VIDEO_ID   play one video in mpv, resuming from saved progress
 
@@ -55,6 +56,27 @@ fn main() -> Result<()> {
             if let Some(e) = s.ai_error {
                 println!("AI wasn't used: {e}");
             }
+            if let Some(e) = s.model_error {
+                println!("The topic model wasn't used: {e}");
+            }
+        }
+        Some("eval") => {
+            let weeks = args.get(1).and_then(|w| w.parse().ok()).unwrap_or(8);
+            // The installed topic model, or another Model2Vec model folder in YOURTUBE_MODEL to compare.
+            let model = match std::env::var_os("YOURTUBE_MODEL") {
+                Some(d) => Some(foryou::embed::Model::load(std::path::Path::new(&d))?),
+                None => foryou::embed::load_installed(),
+            };
+            if model.is_none() {
+                println!("(The topic model isn't installed, so only the word-based scorers run. Turn it on in Preferences → For You.)\n");
+            }
+            let r = foryou::eval::run(&db::open()?, weeks, model.as_ref())?;
+            println!("{} weeks, {} watched videos, each week against 1000 random unwatched ones.\n", r.weeks, r.positives);
+            println!("{:<28} {:>6} {:>11}", "scorer", "AUC", "recall@100");
+            for row in r.rows {
+                println!("{:<28} {:>6.3} {:>11.3}", row.name, row.auc, row.recall_100);
+            }
+            println!("\nAUC 0.5 is a coin flip. Compare scorers with each other: see src/foryou/eval.rs for the limits.");
         }
         Some("play") => {
             let id = args.get(1).ok_or_else(|| anyhow::anyhow!("usage: yourtube play VIDEO_ID"))?;
@@ -66,7 +88,7 @@ fn main() -> Result<()> {
         }
         Some("-h" | "--help" | "help") => println!(
             "{}",
-            include_str!("main.rs").lines().skip(2).take(7).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
+            include_str!("main.rs").lines().skip(2).take(8).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
         ),
         Some(other) if ui::video_id_from(other).is_none() => anyhow::bail!("unknown command {other:?}; try yourtube --help"),
         _ => {

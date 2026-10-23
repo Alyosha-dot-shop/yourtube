@@ -101,6 +101,12 @@ fn for_you_page(app: &Rc<App>, dialog: &adw::PreferencesDialog, edit: &Rc<RefCel
     external_url.connect_changed(move |_| sync_external());
     source.add(&external);
     source.add(&external_url);
+    source.add(&switch(
+        edit,
+        "Match topics by meaning",
+        "Uses a small model (30 MB, downloaded once, runs on this computer) so videos about the same thing match even without shared words",
+        |c| &mut c.topic_model,
+    ));
     page.add(&source);
 
     let ai_group = adw::PreferencesGroup::builder()

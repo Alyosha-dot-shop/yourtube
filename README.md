@@ -194,12 +194,13 @@ so YouTube can't join them up. YourTube also doesn't send back the visitor id Yo
 out, which would otherwise link them. For You spreads its lookups over half a minute instead
 of sending them all at once.
 
-Playback and downloads still come straight from YouTube by default, because YouTube blocks
-most video streams over Tor with "Sign in to confirm you're not a bot". So YouTube can see
-which videos your IP plays, but not what you searched for or browsed to find them. The switch
-under the proxy sends playback and downloads through Tor as well. Some videos will play, many
-won't; when one fails, YourTube doesn't fall back to your own address. Preferences → Network
-shows what is covered right now.
+Playback and downloads still come straight from YouTube by default, so YouTube can see which
+videos your IP plays, but not what you searched for or browsed to find them. The switch under
+the proxy sends playback and downloads through Tor too. YouTube turns many Tor exits away
+("Sign in to confirm you're not a bot"; 7 of 10 in my test), so YourTube tries fresh circuits
+until one is let through, then plays at up to 480p: expect about a minute before a video
+starts. If eight exits in a row are turned away, it stops rather than fall back to your own
+address. Preferences → Network shows what is covered right now.
 
 Tor makes pages a few seconds slower, and some requests fail when YouTube blocks an exit node.
 Trying again usually works.

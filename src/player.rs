@@ -153,13 +153,15 @@ pub fn play_queue(items: &[Item], opts: &Options, on_event: impl Fn(Event)) -> R
     // proxy both yt-dlp and mpv get a local HTTP bridge into it instead, on one Tor circuit.
     let mut bridged;
     let mut opts = opts;
-    if let Some(p) = opts.proxy.as_deref().filter(|p| is_socks(p))
-        && entries.iter().any(|e| e.source.starts_with("https://"))
-    {
-        let bridge = crate::bridge::http_proxy_for(p)
+    let first_online = items.iter().zip(&entries).find(|(_, e)| e.source.starts_with("https://")).map(|(it, _)| it.id.clone());
+    if let (Some(_), Some(id)) = (opts.proxy.as_deref().filter(|p| is_socks(p)), first_online) {
+        let p = playable_circuit(&id)?;
+        let bridge = crate::bridge::http_proxy_for(&p)
             .map_err(|e| anyhow::anyhow!("couldn't route playback through the proxy ({e}), so nothing was played"))?;
         bridged = opts.clone();
         bridged.proxy = Some(bridge);
+        // Tor is slow: in tests 10 s of 1080p took 1.5 to 5 minutes to play, 480p about one.
+        bridged.max_height = bridged.max_height.min(TOR_MAX_HEIGHT);
         opts = &bridged;
     }
     let args = mpv_args(&entries, opts, &ipc_path, user_sets_hwdec());
@@ -347,6 +349,54 @@ pub fn watch_url(id: &str) -> String {
 }
 
 /// Everything mpv is started with. `user_hwdec`: the user's mpv.conf picks a decoder itself.
+/// Playback quality cap through Tor.
+const TOR_MAX_HEIGHT: u32 = 480;
+
+/// A Tor circuit YouTube will play `video_id` on, as a proxy URL.
+///
+/// YouTube turns many Tor exits away for playback ("Sign in to confirm you're not a bot"; 7 of
+/// 10 in a test on 2026-10-23, mostly one big exit operator's addresses). So try the circuit
+/// that worked last, then fresh ones, each checked with a quick yt-dlp lookup, up to eight.
+pub fn playable_circuit(video_id: &str) -> Result<String> {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static LAST_GOOD: Mutex<Option<String>> = Mutex::new(None);
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    let base = crate::config::load().proxy.filter(|p| is_socks(p)).ok_or_else(|| anyhow::anyhow!("no SOCKS proxy set"))?;
+    let last = LAST_GOOD.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let fresh = (0..8).map(|_| crate::yt::isolated_proxy(&base, &format!("play-{}", NEXT.fetch_add(1, Ordering::Relaxed))));
+    for p in last.into_iter().chain(fresh) {
+        if youtube_plays_on(&p, video_id) {
+            *LAST_GOOD.lock().unwrap_or_else(|e| e.into_inner()) = Some(p.clone());
+            return Ok(p);
+        }
+    }
+    anyhow::bail!("YouTube turned away 8 Tor exits in a row, so nothing was played (try again, or turn off playback through the proxy)")
+}
+
+/// Does YouTube hand out this video's streams through `proxy`? (A yt-dlp lookup, no download.)
+fn youtube_plays_on(proxy: &str, video_id: &str) -> bool {
+    let child = crate::proc::ytdlp()
+        .args(["--quiet", "--simulate", "--no-playlist", "--no-warnings", "--socket-timeout", "20", "--proxy", proxy, "--", video_id])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else { return false };
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(200)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
 /// socks4://, socks5://, socks5h://…
 pub fn is_socks(proxy: &str) -> bool {
     proxy.trim().to_ascii_lowercase().starts_with("socks")

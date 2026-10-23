@@ -1,7 +1,8 @@
 //! Community extras FreeTube also shows: Return YouTube Dislike's vote counts
 //! and DeArrow's crowd-sourced titles and thumbnails.
 //!
-//! Both go through `yt::agent()`, so they use the configured proxy too.
+//! Both go through `yt::agent_for_url`, so they use the configured proxy too, on their own
+//! Tor circuit.
 
 // Parsed data carries every field YouTube gives us, even ones no screen shows yet,
 // so contributors can use them without touching the parsers.
@@ -27,8 +28,12 @@ pub struct Votes {
 }
 
 pub fn dislikes(id: &str) -> Result<Votes> {
-    let body =
-        crate::yt::agent().get(&format!("https://returnyoutubedislikeapi.com/votes?videoId={id}")).call()?.body_mut().read_to_string()?;
+    let body = {
+        let url = format!("https://returnyoutubedislikeapi.com/votes?videoId={id}");
+        crate::yt::agent_for_url(&url).get(&url).call()
+    }?
+    .body_mut()
+    .read_to_string()?;
     parse_votes(&body)
 }
 
@@ -100,7 +105,7 @@ pub fn dearrow_many(ids: &[&str]) -> HashMap<String, Branding> {
 }
 
 fn fetch_prefix(prefix: &str) -> Result<Value> {
-    let r = crate::yt::agent().get(&format!("https://sponsor.ajay.app/api/branding/{prefix}")).call();
+    let r = crate::yt::agent_for(crate::yt::Purpose::Extras).get(&format!("https://sponsor.ajay.app/api/branding/{prefix}")).call();
     match r {
         Ok(mut resp) => Ok(serde_json::from_str(&resp.body_mut().with_config().limit(8 * 1024 * 1024).read_to_string()?)?),
         // 404 just means no video with this prefix has any submissions.

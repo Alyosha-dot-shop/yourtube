@@ -25,6 +25,10 @@ use std::sync::{Arc, Mutex, mpsc};
 const SEARCHES: usize = 10;
 const SEEDS: usize = 8;
 const WORKERS: usize = 6;
+/// Workers behind a proxy, where requests are spread out (see `fetch_all`).
+const PACED_WORKERS: usize = 2;
+/// How long YouTube's related videos for a watched video are reused.
+const RELATED_TTL: i64 = 86400;
 const SUBSCRIPTION_DAYS: i64 = 14;
 const AI_RERANK: usize = 40;
 
@@ -84,7 +88,7 @@ pub fn refresh(cfg: &Config, say: impl Fn(&str)) -> Result<Stats> {
     }
 
     say(&format!("Looking on YouTube ({} searches)…", jobs.len()));
-    let (mut cands, failed) = fetch_all(jobs);
+    let (mut cands, failed) = fetch_all(jobs, cfg.proxy.is_some());
     stats.failed_requests = failed;
     cands.extend(subscription_uploads(&conn, now)?);
     stats.candidates = cands.len();
@@ -132,22 +136,52 @@ pub fn refresh(cfg: &Config, say: impl Fn(&str)) -> Result<Stats> {
     Ok(stats)
 }
 
-fn fetch_all(jobs: Vec<Fetch>) -> (Vec<Candidate>, usize) {
+/// Run the lookups. Behind a proxy (Tor) they go out two at a time, in random order, with
+/// random pauses, on For You's own circuit: a burst of ~20 searches built from your history,
+/// all from one exit within seconds, would be a fingerprint of its own.
+fn fetch_all(mut jobs: Vec<Fetch>, paced: bool) -> (Vec<Candidate>, usize) {
+    let random = |n: u64| {
+        let mut b = [0u8; 8];
+        let _ = getrandom::getrandom(&mut b);
+        u64::from_le_bytes(b) % n.max(1)
+    };
+    for i in (1..jobs.len()).rev() {
+        jobs.swap(i, random(i as u64 + 1) as usize);
+    }
     let queue = Arc::new(Mutex::new(jobs));
     let (tx, rx) = mpsc::channel::<Result<Vec<Candidate>>>();
-    for _ in 0..WORKERS {
+    for _ in 0..if paced { PACED_WORKERS } else { WORKERS } {
         let (queue, tx) = (queue.clone(), tx.clone());
         std::thread::spawn(move || {
-            loop {
-                let Some(job) = queue.lock().unwrap().pop() else { break };
-                let r = match job {
-                    Fetch::Search(q, src) => crate::yt::search(&q).map(|r| tag(r.videos, &src)),
-                    Fetch::Related(id, src) => crate::yt::related(&id).map(|v| tag(v, &src)),
-                };
-                if tx.send(r).is_err() {
-                    break;
+            crate::yt::with_purpose(crate::yt::Purpose::ForYou, || {
+                let conn = db::open().ok();
+                loop {
+                    let Some(job) = queue.lock().unwrap().pop() else { break };
+                    let mut asked = true;
+                    let r = match job {
+                        Fetch::Search(q, src) => crate::yt::search(&q).map(|r| tag(r.videos, &src)),
+                        Fetch::Related(id, src) => match conn.as_ref().and_then(|c| db::related_cached(c, &id, RELATED_TTL)) {
+                            Some(v) => {
+                                asked = false;
+                                Ok(tag(v, &src))
+                            }
+                            None => crate::yt::related(&id)
+                                .inspect(|v| {
+                                    if let Some(c) = &conn {
+                                        let _ = db::cache_related(c, &id, v);
+                                    }
+                                })
+                                .map(|v| tag(v, &src)),
+                        },
+                    };
+                    if tx.send(r).is_err() {
+                        break;
+                    }
+                    if paced && asked {
+                        std::thread::sleep(std::time::Duration::from_millis(1000 + random(3000)));
+                    }
                 }
-            }
+            })
         });
     }
     drop(tx);

@@ -145,12 +145,18 @@ With [Tor](https://www.torproject.org) running (on Arch: `sudo pacman -S tor` an
 thumbnails, comments and SponsorBlock lookups go through Tor, and YouTube sees a Tor exit
 instead of you.
 
+Each kind of request gets its own Tor circuit: your searches, the pages you browse, your
+subscription feed, thumbnails, For You's lookups and the extras all leave from different exits,
+so YouTube can't join them up. YourTube also doesn't send back the visitor id YouTube hands
+out, which would otherwise link them. For You spreads its lookups over half a minute instead
+of sending them all at once.
+
 Playback and downloads still come straight from YouTube by default, because YouTube blocks
 most video streams over Tor with "Sign in to confirm you're not a bot". So YouTube can see
 which videos your IP plays, but not what you searched for or browsed to find them. The switch
-under the proxy sends downloads through Tor too. Playing through Tor isn't possible yet,
-because mpv can't use a SOCKS proxy and would fetch the video from your own address, so
-YourTube refuses rather than leak it: download the video first, or use an HTTP proxy.
+under the proxy sends playback and downloads through Tor as well. Some videos will play, many
+won't; when one fails, YourTube doesn't fall back to your own address. Preferences → Network
+shows what is covered right now.
 
 Tor makes pages a few seconds slower, and some requests fail when YouTube blocks an exit node.
 Trying again usually works.
@@ -198,6 +204,10 @@ YourTube connects to YouTube, SponsorBlock, Return YouTube Dislike and DeArrow (
 can be turned off), and to your AI or recommender only if you set one up. Ctrl+Shift+B bug
 reports leave out your history, searches, keys and passwords, and you see the report before
 it's sent.
+
+Deleting history overwrites it in the database instead of leaving it in free space, and
+"Clear history" also empties the thumbnail cache, whose file names are video ids. In incognito,
+thumbnails are kept in memory (your session's runtime folder) and dropped when you leave it.
 
 ## Command line
 

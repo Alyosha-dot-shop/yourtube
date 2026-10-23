@@ -664,23 +664,52 @@ fn playback_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {
         .description("Send searches, pages, feeds and thumbnails through a proxy, for example Tor at socks5h://127.0.0.1:9050.")
         .build();
     let proxy = adw::EntryRow::builder().title("Proxy (empty for none)").text(c.proxy.clone().unwrap_or_default()).build();
+    let playback = switch(
+        edit,
+        "Playback and downloads through the proxy too",
+        "Off: videos come straight from YouTube. YouTube blocks most playback over Tor, so expect failures.",
+        |c| &mut c.proxy_playback,
+    );
+    // What's protected right now, in plain words.
+    let status = adw::ActionRow::builder().title("Right now").subtitle_lines(3).build();
+    let update = {
+        let (edit, status) = (edit.clone(), status.clone());
+        move || status.set_subtitle(&privacy_summary(&edit.borrow()))
+    };
+    update();
     proxy.connect_changed(glib::clone!(
         #[strong]
         edit,
+        #[strong]
+        update,
         move |r| {
             let v = r.text().trim().to_owned();
             edit.borrow_mut().proxy = v.contains("://").then_some(v);
+            update();
         }
     ));
+    playback.connect_active_notify(move |_| update());
     net.add(&proxy);
-    net.add(&switch(
-        edit,
-        "Playback and downloads through the proxy too",
-        "Off: videos come straight from YouTube. On: downloads use the proxy; playing needs an HTTP proxy (with Tor, download first). YouTube blocks most playback over Tor.",
-        |c| &mut c.proxy_playback,
-    ));
+    net.add(&playback);
+    net.add(&status);
     page.add(&net);
     page
+}
+
+/// Which traffic the proxy covers, for the "Right now" row.
+fn privacy_summary(c: &Config) -> String {
+    let Some(p) = c.proxy.as_deref() else {
+        return "Direct: YouTube sees your address for everything (but no account, and no tracking cookies).".into();
+    };
+    let tor = p.to_ascii_lowercase().starts_with("socks");
+    let via = if tor { "Tor, each kind on its own circuit" } else { "the proxy" };
+    if c.proxy_playback {
+        format!("Everything goes through {via}, videos included.")
+    } else {
+        format!(
+            "Searches, pages, feeds and thumbnails go through {via}. Videos come straight from YouTube, so it can see which videos you play."
+        )
+    }
 }
 
 /// Privacy, distractions and the web version.

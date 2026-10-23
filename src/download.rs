@@ -641,7 +641,7 @@ mod tests {
         assert_eq!(o.dir, PathBuf::from("/tmp/dl"));
         let a = ytdlp_args("-abc", &o).join(" ");
         assert!(a.contains("-P /tmp/dl -o %(title)s [%(id)s].%(ext)s"), "{a}");
-        assert!(a.contains("--proxy socks5h://127.0.0.1:9050"));
+        assert!(a.contains("--proxy socks5h://yt-play-") && a.contains(":x@127.0.0.1:9050"), "own Tor circuit: {a}");
         assert!(a.contains("--sponsorblock-remove interaction,music_offtopic,selfpromo,sponsor"), "only skip categories: {a}");
         assert!(a.contains("bestvideo[height<=1080]"));
         assert!(!a.contains("--sub-langs"));

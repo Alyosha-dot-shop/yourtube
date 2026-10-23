@@ -98,7 +98,9 @@ pub fn incognito() -> bool {
 }
 
 pub fn set_incognito(on: bool) {
-    INCOGNITO.store(on, Ordering::Relaxed);
+    if !INCOGNITO.swap(on, Ordering::Relaxed) || !on {
+        crate::thumbs::forget_incognito();
+    }
 }
 
 pub fn open() -> Result<Connection> {
@@ -115,6 +117,7 @@ pub fn init(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
          PRAGMA busy_timeout=5000;
+         PRAGMA secure_delete=ON; -- deleted history is overwritten, not left in free pages
          CREATE TABLE IF NOT EXISTS channels (
              id TEXT PRIMARY KEY,
              name TEXT NOT NULL,
@@ -170,6 +173,12 @@ pub fn init(conn: &Connection) -> Result<()> {
              kind TEXT NOT NULL CHECK (kind IN ('more', 'not_interested', 'fewer')),
              at INTEGER NOT NULL,
              PRIMARY KEY (video_id, kind)
+         );
+         -- YouTube's related videos for a watched video, kept a day so For You doesn't ask again.
+         CREATE TABLE IF NOT EXISTS related_cache (
+             video_id TEXT PRIMARY KEY,
+             at INTEGER NOT NULL,
+             videos TEXT NOT NULL  -- JSON list
          );
          CREATE TABLE IF NOT EXISTS rec_shown (
              video_id TEXT PRIMARY KEY,
@@ -444,7 +453,15 @@ pub fn set_watched(conn: &Connection, video_id: &str, watched: bool) -> Result<(
         save_progress(conn, video_id, len.unwrap_or(0.0), len)?;
     } else {
         conn.execute("DELETE FROM history WHERE video_id = ?1", [video_id])?;
+        let _ = std::fs::remove_file(crate::thumbs::path(video_id));
     }
+    Ok(())
+}
+
+/// After a big delete: fold the write-ahead log back in and shrink the file, so the deleted rows
+/// don't linger in either.
+pub fn compact(conn: &Connection) -> Result<()> {
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
     Ok(())
 }
 
@@ -521,6 +538,23 @@ pub fn mark_shown(conn: &Connection, ids: &[String], run_at: i64) -> Result<()> 
     Ok(())
 }
 
+/// Related videos fetched for `id` within `max_age` seconds.
+pub fn related_cached(conn: &Connection, id: &str, max_age: i64) -> Option<Vec<crate::feed::Video>> {
+    let json: String = conn
+        .query_row("SELECT videos FROM related_cache WHERE video_id = ?1 AND at >= ?2", params![id, now() - max_age], |r| r.get(0))
+        .ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+pub fn cache_related(conn: &Connection, id: &str, videos: &[crate::feed::Video]) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO related_cache (video_id, at, videos) VALUES (?1, ?2, ?3)",
+        params![id, now(), serde_json::to_string(videos)?],
+    )?;
+    conn.execute("DELETE FROM related_cache WHERE at < ?1", [now() - 7 * 86400])?;
+    Ok(())
+}
+
 pub fn mark_clicked(conn: &Connection, id: &str) -> Result<()> {
     if incognito() {
         return Ok(());
@@ -558,4 +592,30 @@ pub fn rejected_videos(conn: &Connection) -> Result<Vec<String>> {
 pub fn remove_feedback(conn: &Connection, video_id: &str, kind: &str) -> Result<()> {
     conn.execute("DELETE FROM rec_feedback WHERE video_id = ?1 AND kind = ?2", [video_id, kind])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deleted_history_leaves_no_trace_in_the_file() {
+        let dir = std::env::temp_dir().join(format!("yourtube-db-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.db");
+        let conn = Connection::open(&path).unwrap();
+        init(&conn).unwrap();
+        let marker = "UNIQUE-MARKER-title-7f3a9c";
+        conn.execute("INSERT INTO history (video_id, title, watched_at, position) VALUES ('abcdefghijk', ?1, 1, 1)", [marker]).unwrap();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+        let has = |p: &std::path::Path| std::fs::read(p).is_ok_and(|b| b.windows(marker.len()).any(|w| w == marker.as_bytes()));
+        assert!(has(&path), "the marker should be in the file before deleting");
+        conn.execute("DELETE FROM history", []).unwrap();
+        compact(&conn).unwrap();
+        drop(conn);
+        for f in ["t.db", "t.db-wal", "t.db-shm"] {
+            assert!(!has(&dir.join(f)), "{f} still holds deleted history");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

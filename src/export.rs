@@ -172,12 +172,20 @@ pub fn export_all(conn: &Connection, folder: &Path) -> Result<Summary> {
 pub fn forget_searches(conn: &Connection, one: Option<(&str, i64)>) -> Result<usize> {
     Ok(match one {
         Some((q, at)) => conn.execute("DELETE FROM searches WHERE query = ?1 AND at = ?2", rusqlite::params![q, at])?,
-        None => conn.execute("DELETE FROM searches", [])?,
+        None => {
+            let n = conn.execute("DELETE FROM searches", [])?;
+            crate::db::compact(conn)?;
+            n
+        }
     })
 }
 
+/// Delete all watch history, the thumbnails (named by video id) and the traces in the database file.
 pub fn clear_history(conn: &Connection) -> Result<usize> {
-    Ok(conn.execute("DELETE FROM history", [])?)
+    let n = conn.execute("DELETE FROM history", [])?;
+    crate::db::compact(conn)?;
+    crate::thumbs::clear();
+    Ok(n)
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ const YTDLP_WORKERS: usize = 4;
 const YTDLP_BATCH: usize = 10;
 const PER_CHANNEL: usize = 15;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Video {
     pub id: String,
     pub channel_id: String,
@@ -102,7 +102,7 @@ pub fn refresh(progress: impl Fn(Progress) + Send + Sync + 'static) -> Result<()
     if !fallback.is_empty() {
         // The same proxy as the rest of the refresh, so a Tor user's subscriptions never go out
         // from their own address just because Tor got the RSS feeds blocked.
-        let proxy = crate::config::load().proxy;
+        let proxy = crate::config::load().proxy.map(|p| crate::yt::isolated_proxy(&p, "feed"));
         let batches: Vec<Vec<String>> = fallback.chunks(YTDLP_BATCH).map(|c| c.to_vec()).collect();
         let queue = Arc::new(Mutex::new(batches));
         let (tx, rx) = mpsc::channel::<(Vec<String>, Result<Vec<Video>>)>();
@@ -177,7 +177,7 @@ fn store(conn: &Connection, channel_id: &str, videos: &[Video]) -> Result<usize>
 
 fn fetch_rss(channel_id: &str) -> Result<Vec<Video>> {
     let url = format!("https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}");
-    let body = crate::yt::agent()
+    let body = crate::yt::agent_for(crate::yt::Purpose::Feed)
         .get(&url)
         .config()
         .timeout_global(Some(std::time::Duration::from_secs(15)))

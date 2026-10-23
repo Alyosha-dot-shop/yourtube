@@ -18,6 +18,7 @@ use crate::feed::Video;
 use anyhow::{Result, anyhow};
 use base64::Engine as _;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -75,24 +76,105 @@ pub struct SearchResults {
 // ---------------------------------------------------------------------------
 // Networking
 
+/// What a request is for. With a Tor proxy each purpose gets its own circuit (see
+/// [`isolated_proxy`]), so YouTube can't join your searches to your subscriptions, the
+/// thumbnails on screen or the videos you open just because they came from the same exit.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Purpose {
+    Search,
+    Video,
+    Browse,
+    Feed,
+    Thumbs,
+    Extras,
+    SponsorBlock,
+    ForYou,
+}
+
+impl Purpose {
+    fn name(self) -> &'static str {
+        match self {
+            Purpose::Search => "search",
+            Purpose::Video => "video",
+            Purpose::Browse => "browse",
+            Purpose::Feed => "feed",
+            Purpose::Thumbs => "thumbs",
+            Purpose::Extras => "extras",
+            Purpose::SponsorBlock => "sponsorblock",
+            Purpose::ForYou => "foryou",
+        }
+    }
+
+    /// Worked out from the address, unless the thread said otherwise ([`with_purpose`]).
+    pub fn of(url: &str) -> Purpose {
+        if let Some(p) = PURPOSE.with(|p| p.get()) {
+            return p;
+        }
+        let u = url.split_once("://").map_or(url, |(_, rest)| rest);
+        let (host, path) = u.split_once('/').unwrap_or((u, ""));
+        match host {
+            h if h.ends_with("ytimg.com") || h.ends_with("ggpht.com") => Purpose::Thumbs,
+            "sponsor.ajay.app" => Purpose::SponsorBlock,
+            "returnyoutubedislikeapi.com" => Purpose::Extras,
+            _ if path.starts_with("feeds/") => Purpose::Feed,
+            _ if path.starts_with("results") || path.starts_with("youtubei/v1/search") => Purpose::Search,
+            _ if path.starts_with("watch") || path.starts_with("youtubei/v1/next") => Purpose::Video,
+            _ => Purpose::Browse,
+        }
+    }
+}
+
+thread_local! {
+    static PURPOSE: std::cell::Cell<Option<Purpose>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with every request on this thread counted as `p` (For You's searches are built
+/// from your history, so they shouldn't share a circuit with the searches you type).
+pub fn with_purpose<T>(p: Purpose, f: impl FnOnce() -> T) -> T {
+    let before = PURPOSE.with(|c| c.replace(Some(p)));
+    let r = f();
+    PURPOSE.with(|c| c.set(before));
+    r
+}
+
+/// A different SOCKS username per purpose (and per run of YourTube), which Tor answers with a
+/// separate circuit (IsolateSOCKSAuth, on by default). HTTP proxies and proxies that already
+/// carry a username are left alone.
+pub fn isolated_proxy(proxy: &str, tag: &str) -> String {
+    static RUN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let run = RUN.get_or_init(|| {
+        let mut b = [0u8; 6];
+        let _ = getrandom::getrandom(&mut b);
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    });
+    let Some((scheme, rest)) = proxy.split_once("://") else { return proxy.to_owned() };
+    if !scheme.to_ascii_lowercase().starts_with("socks5") || rest.contains('@') {
+        return proxy.to_owned();
+    }
+    let tag: String = tag.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).take(40).collect();
+    format!("{scheme}://yt-{tag}-{run}:x@{rest}")
+}
+
+/// The HTTP agent for a request to `url`: see [`agent_for`].
+pub fn agent_for_url(url: &str) -> ureq::Agent {
+    agent_for(Purpose::of(url))
+}
+
 /// The HTTP agent every YouTube-facing request in the app should use.
 ///
-/// It honours `proxy` from the config (`socks5h://…`, `http://…`); without one
-/// it falls back to the usual `HTTPS_PROXY`/`ALL_PROXY` environment variables.
-/// The agent is rebuilt only when the proxy setting changes, so connections are
-/// reused between calls.
-pub fn agent() -> ureq::Agent {
-    static CACHE: Mutex<Option<(Option<String>, ureq::Agent)>> = Mutex::new(None);
+/// It honours `proxy` from the config (`socks5h://…`, `http://…`), with a separate Tor
+/// circuit per purpose; without one it falls back to the usual `HTTPS_PROXY`/`ALL_PROXY`
+/// environment variables. Agents are kept until the proxy setting changes, so connections
+/// are reused between calls.
+pub fn agent_for(purpose: Purpose) -> ureq::Agent {
+    static CACHE: Mutex<Option<(Option<String>, HashMap<Purpose, ureq::Agent>)>> = Mutex::new(None);
     let proxy = crate::config::load().proxy;
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((p, a)) = cache.as_ref()
-        && *p == proxy
-    {
-        return a.clone();
+    if cache.as_ref().is_none_or(|(p, _)| *p != proxy) {
+        *cache = Some((proxy.clone(), HashMap::new()));
     }
-    let a = build_agent(proxy.as_deref());
-    *cache = Some((proxy, a.clone()));
-    a
+    let agents = &mut cache.as_mut().expect("just set").1;
+    agents.entry(purpose).or_insert_with(|| build_agent(proxy.map(|p| isolated_proxy(&p, purpose.name())).as_deref())).clone()
 }
 
 fn build_agent(proxy: Option<&str>) -> ureq::Agent {
@@ -136,7 +218,7 @@ fn remember_ytcfg(html: &str) {
 }
 
 pub(crate) fn get_html(url: &str) -> Result<String> {
-    let html = agent()
+    let html = agent_for_url(url)
         .get(url)
         .header("Accept-Language", "en-US,en;q=0.9")
         .header("Cookie", "SOCS=CAI") // skips the cookie-consent page
@@ -156,8 +238,9 @@ pub(crate) fn innertube(endpoint: &str, mut body: Value) -> Result<Value> {
     let version = YTCFG.lock().unwrap_or_else(|e| e.into_inner()).client_version.clone();
     let version = version.unwrap_or_else(|| FALLBACK_CLIENT_VERSION.to_owned());
     body["context"] = json!({ "client": { "clientName": "WEB", "clientVersion": version, "hl": "en", "gl": "US" } });
-    let text = agent()
-        .post(&format!("https://www.youtube.com/youtubei/v1/{endpoint}?prettyPrint=false"))
+    let url = format!("https://www.youtube.com/youtubei/v1/{endpoint}?prettyPrint=false");
+    let text = agent_for_url(&url)
+        .post(&url)
         .header("Content-Type", "application/json")
         .header("Accept-Language", "en-US,en;q=0.9")
         .header("Origin", "https://www.youtube.com")
@@ -1149,6 +1232,28 @@ pub fn parse_clock(s: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn purposes_and_isolation() {
+        assert_eq!(Purpose::of("https://www.youtube.com/results?search_query=x"), Purpose::Search);
+        assert_eq!(Purpose::of("https://www.youtube.com/youtubei/v1/search?prettyPrint=false"), Purpose::Search);
+        assert_eq!(Purpose::of("https://www.youtube.com/watch?v=abc"), Purpose::Video);
+        assert_eq!(Purpose::of("https://www.youtube.com/youtubei/v1/next"), Purpose::Video);
+        assert_eq!(Purpose::of("https://www.youtube.com/channel/UCx/videos"), Purpose::Browse);
+        assert_eq!(Purpose::of("https://www.youtube.com/feeds/videos.xml?channel_id=UCx"), Purpose::Feed);
+        assert_eq!(Purpose::of("https://i.ytimg.com/vi/abc/mqdefault.jpg"), Purpose::Thumbs);
+        assert_eq!(Purpose::of("https://returnyoutubedislikeapi.com/votes?videoId=abc"), Purpose::Extras);
+        assert_eq!(with_purpose(Purpose::ForYou, || Purpose::of("https://www.youtube.com/results?search_query=x")), Purpose::ForYou);
+        assert_eq!(Purpose::of("https://www.youtube.com/results?search_query=x"), Purpose::Search, "override ends with the closure");
+
+        let a = isolated_proxy("socks5h://127.0.0.1:9050", "search");
+        let b = isolated_proxy("socks5h://127.0.0.1:9050", "thumbs");
+        assert!(a.starts_with("socks5h://yt-search-") && a.ends_with(":x@127.0.0.1:9050"), "{a}");
+        assert_ne!(a, b);
+        assert_eq!(a, isolated_proxy("socks5h://127.0.0.1:9050", "search"), "stable within a run");
+        assert_eq!(isolated_proxy("http://proxy:3128", "search"), "http://proxy:3128");
+        assert_eq!(isolated_proxy("socks5h://me:pw@127.0.0.1:9050", "search"), "socks5h://me:pw@127.0.0.1:9050");
+    }
 
     #[test]
     fn helpers() {

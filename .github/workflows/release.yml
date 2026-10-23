@@ -31,7 +31,7 @@ jobs:
           mkdir dist
           cp artifacts/yourtube-linux-x86_64/yourtube dist/yourtube-linux-x86_64
           cp artifacts/yourtube-macos/yourtube dist/yourtube-macos
-          cp artifacts/yourtube-windows-x86_64/yourtube.exe dist/yourtube-windows-x86_64.exe
+          cp artifacts/yourtube-windows-x86_64/yourtube-windows-x86_64.zip dist/
           cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

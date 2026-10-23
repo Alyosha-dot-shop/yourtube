@@ -82,11 +82,34 @@ jobs:
             mingw-w64-ucrt-x86_64-rust
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-gcc
+            zip
       - name: Test
         run: cargo test --locked
       - name: Build
         run: cargo build --release --locked
+      # A folder that runs on a PC without MSYS2: the program, the GTK DLLs it loads, and the
+      # data GTK needs (settings schemas, icons).
+      - name: Bundle for download
+        run: |
+          d=dist/YourTube
+          mkdir -p $d/share/glib-2.0/schemas $d/share/icons
+          cp target/release/yourtube.exe $d/
+          ldd $d/yourtube.exe | awk '/ucrt64/ {print $3}' | sort -u | xargs -I{} cp {} $d/
+          cp /ucrt64/share/glib-2.0/schemas/gschemas.compiled $d/share/glib-2.0/schemas/
+          cp -r /ucrt64/share/icons/Adwaita /ucrt64/share/icons/hicolor $d/share/icons/
+          cp README.md LICENSE $d/
+          (cd dist && zip -qr ../yourtube-windows-x86_64.zip YourTube)
+          ls -la yourtube-windows-x86_64.zip
+      # Start the bundled program outside MSYS2, with only Windows itself on PATH: a missing
+      # DLL fails here instead of on someone's PC.
+      - name: Check the bundle starts on plain Windows
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          $out = & "dist\YourTube\yourtube.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw "yourtube.exe --help failed with $LASTEXITCODE" }
+          $out | Select-Object -First 3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: yourtube-windows-x86_64
-          path: target/release/yourtube.exe
+          path: yourtube-windows-x86_64.zip

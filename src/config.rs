@@ -137,8 +137,11 @@ impl Default for Config {
 
 impl Config {
     /// The proxy for mpv, yt-dlp downloads and the web version's video relay, if playback should use it.
+    /// With Tor, playback and downloads get circuits of their own, apart from searches and browsing;
+    /// within a run, finding a video's stream and fetching it share one exit (YouTube's stream
+    /// links only work from the address that asked for them).
     pub fn playback_proxy(&self) -> Option<String> {
-        self.proxy.clone().filter(|_| self.proxy_playback)
+        self.proxy.as_deref().filter(|_| self.proxy_playback).map(|p| crate::yt::isolated_proxy(p, "play"))
     }
 
     /// The AI settings, if AI is on and complete.

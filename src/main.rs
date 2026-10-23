@@ -8,6 +8,7 @@
 //!   yourtube serve           run the web version for your home network
 //!   yourtube play VIDEO_ID   play one video in mpv, resuming from saved progress
 
+mod bridge;
 mod db;
 mod feed;
 mod import;

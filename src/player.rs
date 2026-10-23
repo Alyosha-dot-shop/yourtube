@@ -145,24 +145,29 @@ pub fn play_queue(items: &[Item], opts: &Options, on_event: impl Fn(Event)) -> R
     }
 
     // mpv fetches the video itself and can't use a SOCKS proxy, so it would quietly go direct.
-    // Downloaded files are fine: yt-dlp fetched those through the proxy.
-    if opts.proxy.as_deref().is_some_and(is_socks) && entries.iter().any(|e| e.source.starts_with("https://")) {
-        anyhow::bail!(
-            "playback through a SOCKS proxy like Tor isn't possible yet, because mpv would fetch the video from your own address. \
-             Turn off \"Playback and downloads through the proxy too\" in Preferences, use an HTTP proxy, or download the video first"
-        );
-    }
-
+    // It goes through a local bridge into the same Tor circuit as its yt-dlp instead, or not at all.
+    // (Downloaded files need nothing: yt-dlp fetched those through the proxy.)
     let ipc_path = ipc_path(std::process::id(), next_serial());
+    // mpv's ytdl hook hands yt-dlp's proxy to ffmpeg for the video itself, and ffmpeg only
+    // speaks HTTP proxies: given socks5h:// it quietly connects directly. So with a SOCKS
+    // proxy both yt-dlp and mpv get a local HTTP bridge into it instead, on one Tor circuit.
+    let mut bridged;
+    let mut opts = opts;
+    if let Some(p) = opts.proxy.as_deref().filter(|p| is_socks(p))
+        && entries.iter().any(|e| e.source.starts_with("https://"))
+    {
+        let bridge = crate::bridge::http_proxy_for(p)
+            .map_err(|e| anyhow::anyhow!("couldn't route playback through the proxy ({e}), so nothing was played"))?;
+        bridged = opts.clone();
+        bridged.proxy = Some(bridge);
+        opts = &bridged;
+    }
+    let args = mpv_args(&entries, opts, &ipc_path, user_sets_hwdec());
+
     #[cfg(unix)]
     let _ = std::fs::remove_file(&ipc_path);
     let started = Instant::now();
-    let mut child = crate::proc::mpv()
-        .args(mpv_args(&entries, opts, &ipc_path, user_sets_hwdec()))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+    let mut child = crate::proc::mpv().args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
 
     // SponsorBlock lookups run on their own threads and report back here, so a slow
     // or unreachable server never delays playback.

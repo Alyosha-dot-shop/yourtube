@@ -102,7 +102,7 @@ pub fn categories_param(s: &Settings) -> String {
 pub fn fetch(s: &Settings, video_id: &str) -> Result<Vec<Segment>> {
     let mut cfg = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(6))).http_status_as_error(false);
     if let Some(p) = &s.proxy {
-        cfg = cfg.proxy(Some(ureq::Proxy::new(p)?));
+        cfg = cfg.proxy(Some(ureq::Proxy::new(&crate::yt::isolated_proxy(p, "sponsorblock"))?));
     }
     let mut resp = cfg
         .build()

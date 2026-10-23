@@ -31,13 +31,18 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
-use std::sync::{Arc, Condvar, Mutex, OnceLock, mpsc};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 const PAGE_WORKERS: usize = 8;
 const STREAM_WORKERS: usize = 12;
 const MAX_BODY: u64 = 64 * 1024;
 const SESSION_DAYS: u64 = 30;
+/// A session also ends after this long without use.
+const SESSION_IDLE: Duration = Duration::from_secs(7 * 86400);
+/// Wrong passwords allowed per address within the window.
+const LOGIN_TRIES: u32 = 10;
+const LOGIN_WINDOW: Duration = Duration::from_secs(600);
 const FOR_YOU_LIMIT: usize = 120;
 const FOR_YOU_STALE: i64 = 6 * 3600;
 const FEED_LIMIT: i64 = 150;
@@ -60,9 +65,21 @@ pub fn serve(cfg: &crate::config::Config) -> Result<()> {
         .map_err(|e| anyhow!("can't use web_address {addr_text:?}: {e}"))?
         .next()
         .ok_or_else(|| anyhow!("can't use web_address {addr_text:?}"))?;
-    let server = tiny_http::Server::http(addr).map_err(|e| anyhow!("can't listen on {addr}: {e}"))?;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(PAGE_WORKERS + STREAM_WORKERS + 4)
+        .enable_all()
+        .build()?;
+    let listener = rt.block_on(tokio::net::TcpListener::bind(addr)).map_err(|e| anyhow!("can't listen on {addr}: {e}"))?;
     let app = Arc::new(App::new(cfg.clone()));
 
+    // A password typed into the config file by hand is stored as a hash from now on.
+    if !cfg.web_password.is_empty() && !crate::config::is_password_hash(&cfg.web_password) {
+        match crate::config::save(cfg) {
+            Ok(()) => println!("Stored the web password as a hash in {}.", crate::config::path().display()),
+            Err(e) => eprintln!("Couldn't rewrite the config to hash the web password: {e}"),
+        }
+    }
     println!("YourTube is running. Open it in a browser:");
     for url in urls(addr) {
         println!("  {url}");
@@ -80,30 +97,68 @@ pub fn serve(cfg: &crate::config::Config) -> Result<()> {
     }
     println!("Press Ctrl+C to stop.");
 
-    let pool = |n: usize, name: &str| {
-        let (tx, rx) = mpsc::channel::<tiny_http::Request>();
-        let rx = Arc::new(Mutex::new(rx));
-        for i in 0..n {
-            let (rx, app) = (rx.clone(), app.clone());
-            std::thread::Builder::new()
-                .name(format!("{name}-{i}"))
-                .spawn(move || {
-                    loop {
-                        let Ok(rq) = rx.lock().unwrap().recv() else { break };
-                        app.serve_one(rq);
-                    }
-                })
-                .expect("spawn worker");
-        }
-        tx
-    };
-    let pages = pool(PAGE_WORKERS, "web");
-    let streams = pool(STREAM_WORKERS, "stream");
-    for rq in server.incoming_requests() {
-        let to = if rq.url().starts_with("/stream/") { &streams } else { &pages };
-        let _ = to.send(rq);
-    }
+    rt.block_on(accept_loop(listener, app));
     Ok(())
+}
+
+/// Connections at once, in total and from one address, before new ones are turned away.
+const MAX_CONNECTIONS: usize = 64;
+const MAX_PER_PEER: usize = 16;
+/// A request's headers must arrive within this (also the keep-alive idle limit), and its body too.
+const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
+const BODY_TIMEOUT: Duration = Duration::from_secs(15);
+
+async fn accept_loop(listener: tokio::net::TcpListener, app: Arc<App>) {
+    let total = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+    let per_peer: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::default();
+    // Page and stream handlers block (SQLite, yt-dlp), so they run on a bounded set of threads.
+    let pages = Arc::new(tokio::sync::Semaphore::new(PAGE_WORKERS));
+    let streams = Arc::new(tokio::sync::Semaphore::new(STREAM_WORKERS));
+    loop {
+        let Ok((sock, peer)) = listener.accept().await else { continue };
+        let Ok(permit) = total.clone().try_acquire_owned() else { continue };
+        let ip = peer.ip();
+        {
+            let mut m = per_peer.lock().unwrap();
+            let n = m.entry(ip).or_default();
+            if *n >= MAX_PER_PEER {
+                continue;
+            }
+            *n += 1;
+        }
+        let (app, per_peer, pages, streams) = (app.clone(), per_peer.clone(), pages.clone(), streams.clone());
+        tokio::spawn(async move {
+            let svc = hyper::service::service_fn(move |rq| {
+                let (app, pages, streams) = (app.clone(), pages.clone(), streams.clone());
+                async move { Ok::<_, std::convert::Infallible>(app.serve_hyper(rq, ip, pages, streams).await) }
+            });
+            let _ = hyper::server::conn::http1::Builder::new()
+                .timer(hyper_util::rt::TokioTimer::new())
+                .header_read_timeout(HEADER_TIMEOUT)
+                .max_buf_size(16 * 1024)
+                .max_headers(64)
+                .serve_connection(hyper_util::rt::TokioIo::new(sock), svc)
+                .await;
+            drop(permit);
+            let mut m = per_peer.lock().unwrap();
+            if let Some(n) = m.get_mut(&ip) {
+                *n -= 1;
+                if *n == 0 {
+                    m.remove(&ip);
+                }
+            }
+        });
+    }
+}
+
+type HyperBody = http_body_util::combinators::BoxBody<bytes::Bytes, std::io::Error>;
+
+/// A short plain-text answer from the transport itself.
+fn plain(status: u16, text: &'static str) -> hyper::Response<HyperBody> {
+    use http_body_util::BodyExt;
+    let mut r = hyper::Response::new(http_body_util::Full::new(bytes::Bytes::from_static(text.as_bytes())).map_err(|e| match e {}).boxed());
+    *r.status_mut() = hyper::StatusCode::from_u16(status).unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+    r
 }
 
 /// `yourtube serve 0.0.0.0:8723` (or just a port) overrides web_address.
@@ -158,13 +213,19 @@ fn asset_version() -> &'static str {
 
 /// Logged-in browsers: random tokens, kept in memory (restarting the server logs everyone out).
 pub struct Sessions {
-    map: Mutex<HashMap<String, Instant>>,
+    /// Token → (created, last used).
+    map: Mutex<HashMap<String, (Instant, Instant)>>,
     ttl: Duration,
+    idle: Duration,
 }
 
 impl Sessions {
     fn new(ttl: Duration) -> Self {
-        Sessions { map: Mutex::new(HashMap::new()), ttl }
+        Sessions { map: Mutex::new(HashMap::new()), ttl, idle: SESSION_IDLE.min(ttl) }
+    }
+
+    fn alive(&self, (created, used): &(Instant, Instant)) -> bool {
+        created.elapsed() < self.ttl && used.elapsed() < self.idle
     }
 
     fn create(&self) -> Result<String> {
@@ -172,8 +233,8 @@ impl Sessions {
         getrandom::getrandom(&mut b).map_err(|e| anyhow!("no randomness: {e}"))?;
         let token: String = b.iter().map(|x| format!("{x:02x}")).collect();
         let mut m = self.map.lock().unwrap();
-        m.retain(|_, at| at.elapsed() < self.ttl);
-        m.insert(token.clone(), Instant::now());
+        m.retain(|_, s| self.alive(s));
+        m.insert(token.clone(), (Instant::now(), Instant::now()));
         Ok(token)
     }
 
@@ -181,13 +242,19 @@ impl Sessions {
         if token.len() != 64 {
             return false;
         }
-        let m = self.map.lock().unwrap();
+        let mut m = self.map.lock().unwrap();
         // Compare every stored token without stopping early, so timing says nothing.
-        let mut ok = false;
-        for (t, at) in m.iter() {
-            ok |= http::ct_eq(t.as_bytes(), token.as_bytes()) && at.elapsed() < self.ttl;
+        let mut hit = None;
+        for (t, s) in m.iter() {
+            if http::ct_eq(t.as_bytes(), token.as_bytes()) && self.alive(s) {
+                hit = Some(t.clone());
+            }
         }
-        ok
+        if let Some(s) = hit.and_then(|t| m.get_mut(&t)) {
+            s.1 = Instant::now();
+            return true;
+        }
+        false
     }
 
     fn remove(&self, token: &str) {
@@ -214,7 +281,8 @@ struct App {
     forced_incognito: bool,
     sessions: Sessions,
     /// Failed logins in the current window, and when the window started.
-    login_fails: Mutex<(u32, Instant)>,
+    /// Wrong passwords per address in the last ten minutes.
+    login_fails: Mutex<HashMap<IpAddr, (u32, Instant)>>,
     resolver: Arc<stream::Resolver>,
     jobs: Mutex<HashMap<JobKey, Job>>,
     /// Held while feed::refresh or foryou::refresh runs (they read the process-wide profile).
@@ -233,6 +301,8 @@ struct Req {
     headers: HashMap<String, String>,
     cookies: HashMap<String, String>,
     body: Vec<u8>,
+    /// The address the request came from (for the per-device login limit).
+    peer: IpAddr,
 }
 
 impl Req {
@@ -336,7 +406,7 @@ impl App {
             default_profile: db::profile_name(),
             forced_incognito: db::incognito(),
             sessions: Sessions::new(Duration::from_secs(SESSION_DAYS * 86400)),
-            login_fails: Mutex::new((0, Instant::now())),
+            login_fails: Mutex::default(),
             jobs: Mutex::new(HashMap::new()),
             refresh_lock: Mutex::new(()),
             thumbs,
@@ -360,60 +430,90 @@ impl App {
         Ok(conn)
     }
 
-    fn serve_one(self: &Arc<Self>, mut rq: tiny_http::Request) {
+    /// One request from hyper: read the (small) body, run the page code on a worker thread,
+    /// and send the answer back, streaming video bodies.
+    async fn serve_hyper(
+        self: Arc<Self>,
+        rq: hyper::Request<hyper::body::Incoming>,
+        peer: IpAddr,
+        pages: Arc<tokio::sync::Semaphore>,
+        streams: Arc<tokio::sync::Semaphore>,
+    ) -> hyper::Response<HyperBody> {
+        use http_body_util::BodyExt;
         let started = Instant::now();
         let method = rq.method().as_str().to_owned();
-        let (path, query) = http::split_url(rq.url());
+        let (path, query) = http::split_url(&rq.uri().to_string());
         let headers: HashMap<String, String> =
-            rq.headers().iter().map(|h| (h.field.as_str().as_str().to_ascii_lowercase(), h.value.as_str().to_owned())).collect();
+            rq.headers().iter().filter_map(|(k, v)| Some((k.as_str().to_ascii_lowercase(), v.to_str().ok()?.to_owned()))).collect();
         let mut body = Vec::new();
         if method == "POST" {
-            let _ = rq.as_reader().take(MAX_BODY).read_to_end(&mut body);
+            let limited = http_body_util::Limited::new(rq.into_body(), MAX_BODY as usize);
+            match tokio::time::timeout(BODY_TIMEOUT, limited.collect()).await {
+                Ok(Ok(b)) => body = b.to_bytes().to_vec(),
+                _ => return plain(413, "Request too large or too slow."),
+            }
         }
         let cookies = headers.get("cookie").map(|c| http::parse_cookies(c)).unwrap_or_default();
-        let req = Req { method, path, query, headers, cookies, body };
-        let resp = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle(&req))) {
-            Ok(r) => r,
-            Err(_) => Resp::text(500, "Something went wrong on the server."),
-        };
+        let req = Req { method, path, query, headers, cookies, body, peer };
+        let pool = if req.path.starts_with("/stream/") { streams } else { pages };
+        let Ok(_slot) = pool.acquire_owned().await else { return plain(503, "Busy.") };
+        let this = self.clone();
+        let (req, resp) = tokio::task::spawn_blocking(move || {
+            let resp = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| this.handle(&req))) {
+                Ok(r) => r,
+                Err(_) => Resp::text(500, "Something went wrong on the server."),
+            };
+            (req, resp)
+        })
+        .await
+        .unwrap_or_else(|_| unreachable!("handler panics are caught"));
         let status = resp.status;
-        let mut hs: Vec<tiny_http::Header> = Vec::new();
-        let mut add = |k: &str, v: &str| {
-            if let Ok(h) = tiny_http::Header::from_bytes(k.as_bytes(), v.as_bytes()) {
-                hs.push(h);
-            }
-        };
+        let mut out = hyper::Response::builder().status(status);
         for (k, v) in &resp.headers {
-            add(k, v);
+            out = out.header(k.as_str(), v.as_str());
         }
-        add("X-Content-Type-Options", "nosniff");
-        add("Referrer-Policy", "no-referrer");
-        add("X-Frame-Options", "DENY");
-        add(
-            "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-        );
-        let code = tiny_http::StatusCode(status);
-        let r = match resp.body {
+        out = out
+            .header("X-Content-Type-Options", "nosniff")
+            .header("Referrer-Policy", "no-referrer")
+            .header("X-Frame-Options", "DENY")
+            .header("Cross-Origin-Opener-Policy", "same-origin")
+            .header("Cross-Origin-Resource-Policy", "same-origin")
+            .header(
+                "Content-Security-Policy",
+                "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            );
+        let body: HyperBody = match resp.body {
             Body::Bytes(b) => {
-                let n = b.len();
-                rq.respond(tiny_http::Response::new(code, hs, std::io::Cursor::new(b), Some(n), None).with_chunked_threshold(usize::MAX))
+                out = out.header("Content-Length", b.len());
+                http_body_util::Full::new(bytes::Bytes::from(b)).map_err(|e| match e {}).boxed()
             }
             // A known length is always sent as Content-Length (players want it), never chunked.
-            Body::Stream(reader, len) => {
-                rq.respond(tiny_http::Response::new(code, hs, reader, len, None).with_chunked_threshold(usize::MAX))
+            Body::Stream(mut reader, len) => {
+                if let Some(n) = len {
+                    out = out.header("Content-Length", n);
+                }
+                let (mut tx, rx) = http_body_util::channel::Channel::<bytes::Bytes, std::io::Error>::new(4);
+                let handle = tokio::runtime::Handle::current();
+                tokio::task::spawn_blocking(move || {
+                    let mut buf = vec![0u8; 64 * 1024];
+                    loop {
+                        match reader.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if handle.block_on(tx.send_data(bytes::Bytes::copy_from_slice(&buf[..n]))).is_err() {
+                                    break; // the browser went away
+                                }
+                            }
+                        }
+                    }
+                });
+                rx.boxed()
             }
         };
         if std::env::var_os("YOURTUBE_WEB_LOG").is_some() {
-            eprintln!(
-                "{} {} {} {:.1} ms{}",
-                req.method,
-                req.path,
-                status,
-                started.elapsed().as_secs_f64() * 1000.0,
-                if r.is_err() { " (client went away)" } else { "" }
-            );
+            eprintln!("{} {} {} {:.1} ms", req.method, req.path, status, started.elapsed().as_secs_f64() * 1000.0);
         }
+        out.body(body).unwrap_or_else(|_| plain(500, "Bad response."))
     }
 
     fn handle(self: &Arc<Self>, req: &Req) -> Resp {
@@ -1139,22 +1239,21 @@ impl App {
         }
         let f = req.fields();
         let next = http::safe_next(f.get("next").map(String::as_str).unwrap_or("/"));
+        // A limit per address: one device guessing can't lock everyone else out.
         {
             let mut fails = self.login_fails.lock().unwrap();
-            if fails.1.elapsed() > Duration::from_secs(600) {
-                *fails = (0, Instant::now());
-            }
-            if fails.0 >= 20 {
+            fails.retain(|_, (_, since)| since.elapsed() < LOGIN_WINDOW);
+            if fails.get(&req.peer).is_some_and(|(n, _)| *n >= LOGIN_TRIES) {
                 return Ok(Resp::html(html::login_page("Too many wrong passwords. Try again in a few minutes.", &next)).status(429));
             }
         }
         let given = f.get("password").map(String::as_str).unwrap_or("");
-        if http::ct_eq(given.as_bytes(), pw.as_bytes()) {
+        if crate::config::password_matches(pw, given) {
+            self.login_fails.lock().unwrap().remove(&req.peer);
             let token = self.sessions.create()?;
             return Ok(Resp::redirect(&next).header("Set-Cookie", &http::set_cookie(COOKIE_SESSION, &token, Some(SESSION_DAYS * 86400))));
         }
-        self.login_fails.lock().unwrap().0 += 1;
-        std::thread::sleep(Duration::from_millis(400));
+        self.login_fails.lock().unwrap().entry(req.peer).or_insert((0, Instant::now())).0 += 1;
         Ok(Resp::html(html::login_page("That's not the password.", &next)).status(401))
     }
 
@@ -1170,7 +1269,11 @@ impl App {
             }
         }
         match std::fs::read(&path) {
-            Ok(b) => Resp::new(200, "image/jpeg", b).header("Cache-Control", "public, max-age=604800"),
+            // Behind a password, shared caches must not keep them.
+            Ok(b) => Resp::new(200, "image/jpeg", b).header(
+                "Cache-Control",
+                if self.cfg.web_password.is_empty() { "public, max-age=604800" } else { "private, max-age=604800" },
+            ),
             Err(_) => Resp::new(
                 404,
                 "image/svg+xml",

@@ -151,10 +151,11 @@ Without an address it only listens on the machine itself. Each browser picks its
 and can turn on incognito. Other websites can't embed or call it, so a page someone opens can't
 search or play things on it behind their back.
 
-The built-in server is small and doesn't yet protect itself well against a misbehaving device
-on the network. Until it does, if you share it beyond your own computer, put
-[Caddy](https://caddyserver.com) or `tailscale serve` in front of it and keep YourTube itself on
-`127.0.0.1`.
+The password is stored only as a hash (argon2id), and a device that guesses wrong ten times
+waits ten minutes. Slow or oversized requests are cut off, and one device can't hold more than
+16 connections, so a misbehaving gadget on the network can't tie it up. It speaks plain HTTP,
+though: to reach it from outside your home, put [Caddy](https://caddyserver.com) or
+`tailscale serve` in front of it for HTTPS.
 
 ## Tor
 
@@ -270,6 +271,10 @@ and nothing leaves the computer unless the user turned it on.
 
 Run `cargo test`. Some parser tests also use saved YouTube pages in `tests/data/` (see the
 README there).
+
+Releases are built by GitHub Actions from a tagged commit. Each download is listed in
+`SHA256SUMS` and has a signed build record you can check:
+`gh attestation verify yourtube-linux-x86_64 --repo Alyosha-dot-shop/yourtube`.
 
 ## License
 

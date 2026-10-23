@@ -294,12 +294,49 @@ pub fn render(c: &Config) -> String {
     s
 }
 
-/// Write the config file, readable only by you (it may hold an API key).
+/// Is this a stored password hash (`$argon2id$…`) rather than the password itself?
+pub fn is_password_hash(s: &str) -> bool {
+    s.starts_with("$argon2")
+}
+
+/// An argon2id hash of `pw` with a random salt, as stored in the config file.
+pub fn hash_password(pw: &str) -> Option<String> {
+    use argon2::password_hash::PasswordHasher;
+    argon2::Argon2::default().hash_password(pw.as_bytes()).ok().map(|h| h.to_string())
+}
+
+/// Does `given` match the stored web password (a hash, or a password typed into the file by hand)?
+pub fn password_matches(stored: &str, given: &str) -> bool {
+    use argon2::password_hash::{PasswordVerifier, phc::PasswordHash};
+    if is_password_hash(stored) {
+        return PasswordHash::new(stored).is_ok_and(|h| argon2::Argon2::default().verify_password(given.as_bytes(), &h).is_ok());
+    }
+    // Compare in constant time, without leaking the length either.
+    let (a, b) = (sha2_of(stored), sha2_of(given));
+    a.iter().zip(b.iter()).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0 && !stored.is_empty()
+}
+
+fn sha2_of(s: &str) -> [u8; 32] {
+    use sha2::Digest;
+    sha2::Sha256::digest(s.as_bytes()).into()
+}
+
+/// Write the config file, readable only by you (it may hold an API key). A web password typed
+/// in is stored as a hash.
 pub fn save(c: &Config) -> std::io::Result<()> {
     use std::io::Write;
+    let mut c = c.clone();
+    if !c.web_password.is_empty() && !is_password_hash(&c.web_password) {
+        if let Some(h) = hash_password(&c.web_password) {
+            c.web_password = h;
+        }
+    }
+    let c = &c;
     let p = path();
     std::fs::create_dir_all(p.parent().expect("config dir"))?;
     let tmp = p.with_extension("tmp");
+    // A leftover from a crash would keep whatever permissions it had: start fresh.
+    let _ = std::fs::remove_file(&tmp);
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -317,6 +354,17 @@ pub fn save(c: &Config) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_passwords_are_hashed_and_checked() {
+        let h = hash_password("correct horse").unwrap();
+        assert!(is_password_hash(&h) && h.starts_with("$argon2id$"), "{h}");
+        assert_ne!(h, hash_password("correct horse").unwrap(), "salted");
+        assert!(password_matches(&h, "correct horse"));
+        assert!(!password_matches(&h, "correct horsE") && !password_matches(&h, ""));
+        // Typed into the file by hand, before it was hashed.
+        assert!(password_matches("pw", "pw") && !password_matches("pw", "pw2") && !password_matches("", ""));
+    }
 
     #[test]
     fn parses_and_round_trips() {

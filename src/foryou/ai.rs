@@ -26,7 +26,24 @@ pub struct AiConfig {
     pub api_key: Option<String>,
 }
 
+/// Is this address on this computer? Only there may an API key travel over plain http://.
+fn local_url(url: &str) -> bool {
+    let rest = url.trim().strip_prefix("http://").or_else(|| url.trim().strip_prefix("https://")).unwrap_or("");
+    let host = rest.split(['/', '?']).next().unwrap_or("");
+    let host = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host, |(h, _)| h),
+    };
+    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
 fn chat(cfg: &AiConfig, system: &str, user: &str) -> Result<String> {
+    if cfg.api_key.as_deref().is_some_and(|k| !k.is_empty())
+        && !cfg.url.trim().to_ascii_lowercase().starts_with("https://")
+        && !local_url(&cfg.url)
+    {
+        return Err(anyhow!("refusing to send your API key unencrypted; use an https:// address (or a model on this computer)"));
+    }
     let agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(120))).http_status_as_error(true).build().new_agent();
     let mut req = agent.post(&format!("{}/chat/completions", cfg.url.trim_end_matches('/'))).header("Content-Type", "application/json");
     if let Some(k) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
@@ -141,6 +158,18 @@ fn list(items: impl Iterator<Item = impl AsRef<str>>) -> String {
 pub mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Read, Write};
+
+    #[test]
+    fn keys_only_travel_unencrypted_to_this_computer() {
+        assert!(local_url("http://localhost:11434/v1") && local_url("http://127.0.0.1:1234/v1") && local_url("http://[::1]:8080/v1"));
+        assert!(
+            !local_url("http://192.168.1.5:11434/v1")
+                && !local_url("http://api.example.com/v1")
+                && !local_url("http://localhost.evil.com/v1")
+        );
+        let cfg = AiConfig { url: "http://api.example.com/v1".into(), model: "m".into(), api_key: Some("sk-x".into()) };
+        assert!(chat(&cfg, "s", "u").unwrap_err().to_string().contains("unencrypted"));
+    }
     use std::net::TcpListener;
 
     /// A one-request fake chat server. Returns its base URL and a handle yielding the request body.

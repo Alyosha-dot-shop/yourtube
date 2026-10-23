@@ -1,0 +1,43 @@
+# Tag a version (git tag v0.2.0 && git push --tags) to publish it: the CI builds all three
+# platforms, then this attaches the programs to a GitHub release with their SHA-256 sums and a
+# signed record of how they were built. Check a download with:
+#   gh attestation verify yourtube-linux-x86_64 --repo Alyosha-dot-shop/yourtube
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the build attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+      - name: Name the files and write SHA256SUMS
+        run: |
+          mkdir dist
+          cp artifacts/yourtube-linux-x86_64/yourtube dist/yourtube-linux-x86_64
+          cp artifacts/yourtube-macos/yourtube dist/yourtube-macos
+          cp artifacts/yourtube-windows-x86_64/yourtube.exe dist/yourtube-windows-x86_64.exe
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/yourtube-*
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "YourTube $TAG" --generate-notes

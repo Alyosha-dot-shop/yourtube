@@ -35,6 +35,11 @@ const NOT_AN_EXPORT: &str = "This doesn't look like a Google Takeout, NewPipe or
 /// videos you uploaded; we only open the small text files beside them.
 const MAX_FILE: u64 = 1 << 30;
 
+/// At most this much is unpacked from one zip (counting only the files we read), and it may
+/// hold at most this many files (Takeout zips with uploaded videos have a few thousand).
+const MAX_UNPACKED: u64 = 2 << 30;
+const MAX_ENTRIES: usize = 200_000;
+
 /// How deep we look inside a folder you picked.
 const MAX_DEPTH: usize = 8;
 
@@ -185,6 +190,8 @@ fn extension(name: &str) -> String {
 /// Read every file we care about inside a zip, without unpacking it to disk.
 fn read_zip<R: Read + Seek>(reader: R, found: &mut Found) -> Result<()> {
     let mut zip = zip::ZipArchive::new(reader).context("this zip file looks damaged")?;
+    anyhow::ensure!(zip.len() <= MAX_ENTRIES, "this zip has more than {MAX_ENTRIES} files; that's not an export");
+    let mut total: u64 = 0;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
         if entry.is_dir() || entry.size() > MAX_FILE {
@@ -194,8 +201,13 @@ fn read_zip<R: Read + Seek>(reader: R, found: &mut Found) -> Result<()> {
         if !wanted(&name) {
             continue;
         }
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut bytes).with_context(|| format!("unpacking {name}"))?;
+        // A "zip bomb" claims small and unpacks huge: count what we actually unpack, and never
+        // reserve memory from the size the zip claims.
+        let room = MAX_UNPACKED.saturating_sub(total);
+        let mut bytes = Vec::new();
+        entry.by_ref().take(room + 1).read_to_end(&mut bytes).with_context(|| format!("unpacking {name}"))?;
+        total += bytes.len() as u64;
+        anyhow::ensure!(total <= MAX_UNPACKED, "this zip unpacks to more than {} GB of history; that's not an export", MAX_UNPACKED >> 30);
         read_file(&name, &bytes, found).with_context(|| format!("reading {name}"))?;
     }
     Ok(())
@@ -251,18 +263,43 @@ fn read_file(name: &str, bytes: &[u8], found: &mut Found) -> Result<()> {
     Ok(())
 }
 
-/// A copy of a database pulled out of a zip, deleted again when we're done.
+/// A copy of a database pulled out of a zip, deleted again when we're done. It holds someone's
+/// watch history, so it goes in YourTube's private folder under a random name, readable only by you.
 struct TempFile(PathBuf);
 
 impl TempFile {
     fn new(bytes: &[u8]) -> Result<Self> {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("yourtube-import-{}-{n}.db", std::process::id()));
-        std::fs::write(&path, bytes).with_context(|| format!("writing {}", path.display()))?;
-        Ok(TempFile(path))
+        use std::io::Write;
+        let mut r = [0u8; 12];
+        getrandom::getrandom(&mut r).map_err(|e| anyhow::anyhow!("no randomness: {e}"))?;
+        let name: String = r.iter().map(|b| format!("{b:02x}")).collect();
+        let path = crate::proc::run_dir().join(format!("import-{name}.db"));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&path).with_context(|| format!("writing {}", path.display()))?;
+        let file = TempFile(path);
+        f.write_all(bytes)?;
+        Ok(file)
     }
+}
+
+/// Open a database someone gave us, the way SQLite advises for untrusted files: read-only, no
+/// triggers or views, schema not trusted, and checked for damage before anything is read.
+fn open_untrusted(path: &Path) -> Result<Connection> {
+    use rusqlite::config::DbConfig;
+    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    db.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
+    db.set_db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false)?;
+    db.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false)?;
+    db.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_VIEW, false)?;
+    let check: String = db.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+    anyhow::ensure!(check == "ok", "this database is damaged ({check})");
+    Ok(db)
 }
 
 impl Drop for TempFile {
@@ -738,7 +775,7 @@ type StreamRow = (i64, String, Option<String>, Option<String>, Option<String>, O
 /// `search_history(service_id, search, creation_date)`,
 /// `playlists(uid, name)` and `playlist_stream_join(playlist_id, stream_id, join_index)`.
 fn read_newpipe_db(path: &Path, found: &mut Found) -> Result<bool> {
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    let db = open_untrusted(path)?;
     let tables: HashSet<String> =
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     if !tables.contains("subscriptions") || !tables.contains("streams") {
@@ -1187,6 +1224,21 @@ fn save(conn: &mut Connection, found: Found) -> Result<Counts> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn database_copies_are_private_and_cleaned_up() {
+        let tmp = TempFile::new(b"SQLite format 3\0not really").unwrap();
+        let path = tmp.0.clone();
+        assert!(path.starts_with(crate::proc::run_dir()), "{path:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        assert!(open_untrusted(&path).is_err(), "damaged databases are refused");
+        drop(tmp);
+        assert!(!path.exists());
+    }
     use std::io::Write;
 
     /// A fresh database with YourTube's real schema, in memory.

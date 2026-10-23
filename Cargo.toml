@@ -9,16 +9,21 @@ repository = "https://github.com/Alyosha-dot-shop/yourtube"
 [dependencies]
 adw = { version = "0.9.2", package = "libadwaita", features = ["v1_8"] }
 anyhow = "1.0.104"
+argon2 = "0.6.0"
 async-channel = "2.5.0"
 base64 = "0.23.1"
+bytes = "1.12.1"
 dirs = "7.0.0"
 getrandom = "0.2"
 gtk = { version = "0.11.5", package = "gtk4", features = ["v4_20"] }
+http-body-util = { version = "0.1.5", features = ["channel"] }
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 quick-xml = "0.42.0"
 rusqlite = "0.40.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
-tiny_http = "0.12.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync"] }
 ureq = { version = "3.5.0", features = ["socks-proxy"] }
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }

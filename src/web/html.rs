@@ -15,6 +15,9 @@ pub struct Ctx {
     /// A password is set (so there's a Log out button).
     pub password: bool,
     pub hide_views: bool,
+    /// The request came from our own pages, a bookmark or the address bar, so it may record
+    /// searches and clicks. A link from another site still shows the page but records nothing.
+    pub writes: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -403,6 +406,7 @@ mod tests {
             forced_incognito: false,
             password: false,
             hide_views: false,
+            writes: true,
         }
     }
 

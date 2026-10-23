@@ -6,7 +6,7 @@ use super::http::{parse_content_range, parse_range, upstream_range};
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -133,7 +133,7 @@ impl Resolver {
     }
 
     fn run_ytdlp(&self, id: &str) -> Result<Resolved> {
-        let mut cmd = Command::new("yt-dlp");
+        let mut cmd = crate::proc::ytdlp();
         // YouTube's default clients now offer only separate audio and video (or HLS); the mobile
         // web client still has the single-file 360p MP4 (itag 18) a <video> element can play.
         cmd.args(["--no-playlist", "--no-warnings", "--socket-timeout", "15", "--extractor-args", "youtube:player_client=default,mweb"])

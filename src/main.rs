@@ -12,6 +12,7 @@ mod db;
 mod feed;
 mod import;
 mod player;
+mod proc;
 mod report;
 mod thumbs;
 mod ui;

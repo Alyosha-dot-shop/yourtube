@@ -110,14 +110,15 @@ fn build_agent(proxy: Option<&str>) -> ureq::Agent {
     builder.build().new_agent()
 }
 
-/// What we learned from the last page's `ytcfg.set({...})`: the web client's
-/// version and visitor id, which InnerTube calls should send back.
+/// What we learned from the last page's `ytcfg.set({...})`: the web client's version, which
+/// InnerTube calls send back. The page's visitor id (VISITOR_DATA) is deliberately not kept:
+/// sending it would tie every search, page and comment load together, even across Tor
+/// circuits, and the calls work without it (checked 2026-10-23 for search, next and browse).
 #[derive(Default)]
 struct Ytcfg {
     client_version: Option<String>,
-    visitor_data: Option<String>,
 }
-static YTCFG: Mutex<Ytcfg> = Mutex::new(Ytcfg { client_version: None, visitor_data: None });
+static YTCFG: Mutex<Ytcfg> = Mutex::new(Ytcfg { client_version: None });
 
 /// `"KEY":"value"` inside the page's ytcfg blob.
 fn cfg_value<'a>(html: &'a str, key: &str) -> Option<&'a str> {
@@ -131,9 +132,6 @@ fn remember_ytcfg(html: &str) {
     let mut cfg = YTCFG.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(v) = cfg_value(html, "INNERTUBE_CLIENT_VERSION") {
         cfg.client_version = Some(v.to_owned());
-    }
-    if let Some(v) = cfg_value(html, "VISITOR_DATA") {
-        cfg.visitor_data = Some(v.to_owned());
     }
 }
 
@@ -155,15 +153,9 @@ pub(crate) fn get_html(url: &str) -> Result<String> {
 /// `body` holds the request fields (usually just `continuation`); the client
 /// context is added here.
 pub(crate) fn innertube(endpoint: &str, mut body: Value) -> Result<Value> {
-    let (version, visitor) = {
-        let cfg = YTCFG.lock().unwrap_or_else(|e| e.into_inner());
-        (cfg.client_version.clone().unwrap_or_else(|| FALLBACK_CLIENT_VERSION.to_owned()), cfg.visitor_data.clone())
-    };
-    let mut client = json!({ "clientName": "WEB", "clientVersion": version, "hl": "en", "gl": "US" });
-    if let Some(v) = visitor {
-        client["visitorData"] = Value::String(v);
-    }
-    body["context"] = json!({ "client": client });
+    let version = YTCFG.lock().unwrap_or_else(|e| e.into_inner()).client_version.clone();
+    let version = version.unwrap_or_else(|| FALLBACK_CLIENT_VERSION.to_owned());
+    body["context"] = json!({ "client": { "clientName": "WEB", "clientVersion": version, "hl": "en", "gl": "US" } });
     let text = agent()
         .post(&format!("https://www.youtube.com/youtubei/v1/{endpoint}?prettyPrint=false"))
         .header("Content-Type", "application/json")

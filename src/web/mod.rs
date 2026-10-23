@@ -426,6 +426,11 @@ impl App {
         if !password && !http::safe_host(host) {
             return Resp::text(403, "Open YourTube by its IP address or local name (e.g. http://192.168.1.20:8723), or set web_password.");
         }
+        let site = req.header("sec-fetch-site");
+        if !matches!(route, Route::Static(_)) && http::foreign_subrequest(site, req.header("sec-fetch-mode"), req.header("sec-fetch-dest"))
+        {
+            return Resp::text(403, "Other sites can't embed or call YourTube.");
+        }
         if req.method == "POST" && !http::same_origin(req.header("sec-fetch-site"), req.header("origin"), Some(host)) {
             return Resp::text(403, "Cross-site request refused.");
         }
@@ -462,6 +467,7 @@ impl App {
             forced_incognito: self.forced_incognito,
             password,
             hide_views: self.cfg.hide_views,
+            writes: http::own_request(site),
         };
         let r = match route {
             Route::ForYou => self.for_you(&ctx),
@@ -621,7 +627,7 @@ impl App {
         }
         let conn = self.conn(&ctx.profile)?;
         let results = crate::yt::search(q);
-        if !ctx.incognito && self.cfg.remember_searches {
+        if !ctx.incognito && ctx.writes && self.cfg.remember_searches {
             let _ = db::record_search(&conn, q);
         }
         let mut body = html::heading(&format!("Results for “{q}”"), "", None);
@@ -784,7 +790,7 @@ impl App {
         };
         self.resolver.prefetch(&id);
         let conn = self.conn(&ctx.profile)?;
-        if let (Ok(run), false) = (run.parse::<i64>(), ctx.incognito) {
+        if let (Ok(run), false, true) = (run.parse::<i64>(), ctx.incognito, ctx.writes) {
             // A For You pick was opened: that's the strongest "yes".
             match self.cfg.recommender.clone() {
                 Some(base) => {
@@ -1349,6 +1355,7 @@ mod tests {
             forced_incognito: false,
             password: false,
             hide_views: false,
+            writes: true,
         };
         let w = OwnedWatch {
             id: "jNQXAC9IVRw".into(),

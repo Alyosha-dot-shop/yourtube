@@ -414,7 +414,7 @@ fn run(item: &Item, o: &Options, h: &Handle, on_progress: &impl Fn(Update)) -> U
 
 fn download(item: &Item, o: &Options, h: &Handle, on_progress: &impl Fn(Update)) -> Result<Downloaded> {
     std::fs::create_dir_all(&o.dir)?;
-    let mut cmd = Command::new("yt-dlp");
+    let mut cmd = crate::proc::ytdlp();
     cmd.args(ytdlp_args(&item.id, o))
         // Python on Windows otherwise prints in the console's code page.
         .env("PYTHONIOENCODING", "utf-8")

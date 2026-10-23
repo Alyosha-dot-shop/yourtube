@@ -46,19 +46,36 @@ you like.
 
 It's one GTK 4 window, and videos play in [mpv](https://mpv.io).
 
-## Install
+## Download
 
-You need GTK 4.20+, libadwaita 1.8+, [mpv](https://mpv.io), a recent
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) and Rust.
+Ready-made builds are on the
+[Releases page](https://github.com/Alyosha-dot-shop/yourtube/releases). Every platform also
+needs [mpv](https://mpv.io) (plays the videos), [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+(finds them) and [Deno](https://deno.com) (yt-dlp needs it for YouTube).
+
+- **Windows**: unzip `yourtube-windows-x86_64.zip` and run `YourTube\yourtube.exe`. GTK comes
+  inside the zip; install mpv, yt-dlp and Deno so they're on your PATH.
+- **Linux**: `yourtube-linux-x86_64` needs GTK 4.20+ and libadwaita 1.8+, which recent
+  distributions have. On Arch: `sudo pacman -S gtk4 libadwaita mpv yt-dlp deno`, then
+  `chmod +x yourtube-linux-x86_64` and run it.
+- **macOS** (Apple Silicon): `brew install gtk4 libadwaita mpv yt-dlp deno`, then
+  `chmod +x yourtube-macos` and `xattr -d com.apple.quarantine yourtube-macos` (it isn't
+  signed by Apple), and run it.
+
+I use it daily on Linux. The Windows and macOS builds pass the same tests but get far less real
+use, so please tell me what breaks. To check a download, compare it with `SHA256SUMS` on the
+release page, or run
+`gh attestation verify <file> --repo Alyosha-dot-shop/yourtube`.
+
+## Build it yourself
+
+You need GTK 4.20+, libadwaita 1.8+, mpv, a recent yt-dlp, Deno and Rust.
 
 ```sh
 git clone https://github.com/Alyosha-dot-shop/yourtube && cd yourtube
 cargo build --release
 ./target/release/yourtube
 ```
-
-I use it daily on Linux. CI builds and tests it on macOS (`brew install gtk4 libadwaita mpv
-yt-dlp`) and Windows (MSYS2) too, but I don't use those myself, so please tell me what breaks.
 
 For the app menu entry and `yourtube://` links, copy `data/io.github.yourtube.YourTube.desktop`
 to `~/.local/share/applications/`, the icons in `data/icons/` to
@@ -273,10 +290,6 @@ and nothing leaves the computer unless the user turned it on.
 
 Run `cargo test`. Some parser tests also use saved YouTube pages in `tests/data/` (see the
 README there).
-
-Releases are built by GitHub Actions from a tagged commit. Each download is listed in
-`SHA256SUMS` and has a signed build record you can check:
-`gh attestation verify yourtube-linux-x86_64 --repo Alyosha-dot-shop/yourtube`.
 
 ## License
 

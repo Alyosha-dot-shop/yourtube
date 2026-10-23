@@ -1,0 +1,31 @@
+# What cargo-deny checks in CI (and `cargo deny check` locally): known security advisories
+# (RustSec), licenses that fit a GPL-3.0 program, and that every crate comes from crates.io.
+
+[advisories]
+# Unmaintained crates are reported but don't fail the build on their own.
+unmaintained = "workspace"
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

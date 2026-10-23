@@ -1,0 +1,16 @@
+# Weekly update proposals for Rust crates and the CI actions. New releases wait a week first,
+# so a bad version that gets pulled from crates.io or GitHub in its first days never lands here.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

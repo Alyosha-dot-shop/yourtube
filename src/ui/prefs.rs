@@ -737,7 +737,12 @@ fn privacy_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {
         .description("Run “yourtube serve” on a computer that stays on (a Raspberry Pi, an old laptop) and open it from any phone or computer at home. Set a password if other people use your network.")
         .build();
     w.add(&entry(edit, "Address and port (0.0.0.0:8723 for the whole network)", |c| &mut c.web_address));
-    let pw = adw::PasswordEntryRow::builder().title("Password").text(edit.borrow().web_password.as_str()).build();
+    // The password is stored only as a hash, so it can't be shown: leave the field empty to keep it.
+    let stored = crate::config::is_password_hash(&edit.borrow().web_password);
+    let pw = adw::PasswordEntryRow::builder()
+        .title(if stored { "Password (set; type a new one to change it)" } else { "Password" })
+        .text(if stored { String::new() } else { edit.borrow().web_password.clone() })
+        .build();
     pw.connect_changed(glib::clone!(
         #[strong]
         edit,

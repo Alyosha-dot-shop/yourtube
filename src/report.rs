@@ -102,22 +102,71 @@ pub fn recent() -> Vec<Problem> {
     RECENT.lock().unwrap().iter().cloned().collect()
 }
 
-/// Remove things that shouldn't leave your computer: your home folder and keys in URLs.
+/// Remove things that shouldn't leave your computer: your home folder, the secrets in your
+/// settings, keys and tokens, logins inside addresses, and YouTube's per-session video links.
 pub fn scrub(s: &str) -> String {
+    let c = crate::config::load();
+    let secrets: Vec<String> = [Some(c.ai_api_key.clone()), Some(c.web_password.clone()), c.proxy.as_deref().and_then(url_login)]
+        .into_iter()
+        .flatten()
+        .filter(|s| s.len() >= 4)
+        .collect();
+    scrub_with(s, &secrets)
+}
+
+/// The `user:pass` in `scheme://user:pass@host`.
+fn url_login(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let at = rest.find('@')?;
+    (!rest[..at].contains('/')).then(|| rest[..at].to_owned())
+}
+
+fn scrub_with(s: &str, secrets: &[String]) -> String {
     let mut out = s.to_owned();
+    for secret in secrets {
+        out = out.replace(secret.as_str(), "…");
+    }
     if let Some(home) = dirs::home_dir().and_then(|h| h.to_str().map(str::to_owned)) {
         if !home.is_empty() {
             out = out.replace(&home, "~");
         }
     }
-    for key in ["key=", "token=", "password="] {
+    // Words after a marker, up to the next space/&/quote: tokens, keys, signatures.
+    let cut = |out: &mut String, marker: &str, keep_marker: bool, is_end: fn(char) -> bool| {
         let mut from = 0;
-        while let Some(i) = out[from..].find(key) {
-            let start = from + i + key.len();
-            let end = out[start..].find(|c: char| c == '&' || c.is_whitespace()).map_or(out.len(), |e| start + e);
-            out.replace_range(start..end, "…");
-            from = start + "…".len();
+        while let Some(i) = out[from..].find(marker) {
+            let start = from + i + if keep_marker { marker.len() } else { 0 };
+            let end = out[from + i + marker.len()..].find(is_end).map_or(out.len(), |e| from + i + marker.len() + e);
+            let with = if keep_marker { "…".to_owned() } else { format!("{}…", &marker[..marker.len().min(3)]) };
+            out.replace_range(start..end, &with);
+            from = start + with.len();
         }
+    };
+    let word_end: fn(char) -> bool = |c| c == '&' || c == '"' || c == '\'' || c.is_whitespace();
+    for key in ["key=", "token=", "password=", "secret=", "auth=", "sig=", "Bearer "] {
+        cut(&mut out, key, true, word_end);
+    }
+    cut(&mut out, "sk-", false, |c| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    // A login inside an address: scheme://user:pass@host.
+    let mut from = 0;
+    while let Some(i) = out[from..].find("://") {
+        let start = from + i + 3;
+        let host_end = out[start..].find(|c: char| c == '/' || c.is_whitespace()).map_or(out.len(), |e| start + e);
+        match out[start..host_end].rfind('@') {
+            Some(at) => {
+                out.replace_range(start..start + at, "…");
+                from = start + "…".len() + 1;
+            }
+            None => from = start,
+        }
+    }
+    // YouTube's video links name the session and the address that asked for them.
+    let mut from = 0;
+    while let Some(i) = out[from..].find(".googlevideo.com/") {
+        let begin = out[..from + i].rfind(|c: char| c.is_whitespace() || c == '"' || c == '(').map_or(0, |b| b + 1);
+        let end = out[from + i..].find(|c: char| c.is_whitespace() || c == '"' || c == ')').map_or(out.len(), |e| from + i + e);
+        out.replace_range(begin..end, "[YouTube video link]");
+        from = begin + "[YouTube video link]".len();
     }
     out
 }
@@ -184,7 +233,11 @@ pub fn build(what: &str, page: &str, toolkit: &str, screenshot: Option<&str>) ->
     let log = dirs::state_dir()
         .map(|d| d.join("yourtube").join("player.log"))
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|s| s.lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n"))
+        // "<time> <video id> exited …": the id says what you watched, so it's left out.
+        .map(|s| {
+            let last: Vec<&str> = s.lines().rev().take(5).collect();
+            last.into_iter().rev().map(|l| l.splitn(3, ' ').nth(2).unwrap_or("")).collect::<Vec<_>>().join("\n")
+        })
         .unwrap_or_default();
     if !log.is_empty() {
         b += &format!("\n### Last mpv exits\n\n```\n{}\n```\n", scrub(&log));
@@ -226,6 +279,25 @@ mod tests {
         if let Some(h) = dirs::home_dir() {
             assert_eq!(scrub(&format!("{}/x", h.display())), "~/x");
         }
+    }
+
+    #[test]
+    fn scrubs_keys_logins_secrets_and_video_links() {
+        let s = scrub_with(
+            "Authorization: Bearer abc.def-123 key sk-proj-AbC_123xyz proxy socks5h://me:hunter2@127.0.0.1:9050 \
+             url https://rr3---sn-abc.googlevideo.com/videoplayback?expire=1&ip=203.0.113.9 my-own-secret-value done",
+            &["my-own-secret-value".into()],
+        );
+        for gone in ["abc.def-123", "AbC_123xyz", "hunter2", "me:", "203.0.113.9", "sn-abc", "my-own-secret-value"] {
+            assert!(!s.contains(gone), "{gone} survived: {s}");
+        }
+        assert!(
+            s.contains("Bearer …") && s.contains("sk-…") && s.contains("socks5h://…@127.0.0.1:9050") && s.contains("[YouTube video link]"),
+            "{s}"
+        );
+        assert!(s.ends_with("… done"), "{s}");
+        assert_eq!(url_login("socks5h://u:p@host:1"), Some("u:p".into()));
+        assert_eq!(url_login("http://host/a@b"), None);
     }
 
     #[test]

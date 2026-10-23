@@ -14,7 +14,7 @@ async-channel = "2.5.0"
 base64 = "0.23.1"
 bytes = "1.12.1"
 dirs = "7.0.0"
-getrandom = "0.2"
+getrandom = "0.4.3"
 gtk = { version = "0.11.5", package = "gtk4", features = ["v4_20"] }
 http-body-util = { version = "0.1.5", features = ["channel"] }
 hyper = { version = "1.12.0", features = ["server", "http1"] }

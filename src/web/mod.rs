@@ -230,7 +230,7 @@ impl Sessions {
 
     fn create(&self) -> Result<String> {
         let mut b = [0u8; 32];
-        getrandom::getrandom(&mut b).map_err(|e| anyhow!("no randomness: {e}"))?;
+        getrandom::fill(&mut b).map_err(|e| anyhow!("no randomness: {e}"))?;
         let token: String = b.iter().map(|x| format!("{x:02x}")).collect();
         let mut m = self.map.lock().unwrap();
         m.retain(|_, s| self.alive(s));

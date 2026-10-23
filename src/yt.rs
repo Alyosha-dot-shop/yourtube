@@ -144,7 +144,7 @@ pub fn isolated_proxy(proxy: &str, tag: &str) -> String {
     static RUN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let run = RUN.get_or_init(|| {
         let mut b = [0u8; 6];
-        let _ = getrandom::getrandom(&mut b);
+        let _ = getrandom::fill(&mut b);
         b.iter().map(|x| format!("{x:02x}")).collect()
     });
     let Some((scheme, rest)) = proxy.split_once("://") else { return proxy.to_owned() };

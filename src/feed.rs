@@ -13,7 +13,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use rusqlite::{Connection, params};
 use serde_json::Value;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -100,15 +100,18 @@ pub fn refresh(progress: impl Fn(Progress) + Send + Sync + 'static) -> Result<()
     let fallback: Vec<String> = failed.iter().map(|(id, _)| id.clone()).collect();
     let mut still_failed = 0;
     if !fallback.is_empty() {
+        // The same proxy as the rest of the refresh, so a Tor user's subscriptions never go out
+        // from their own address just because Tor got the RSS feeds blocked.
+        let proxy = crate::config::load().proxy;
         let batches: Vec<Vec<String>> = fallback.chunks(YTDLP_BATCH).map(|c| c.to_vec()).collect();
         let queue = Arc::new(Mutex::new(batches));
         let (tx, rx) = mpsc::channel::<(Vec<String>, Result<Vec<Video>>)>();
         for _ in 0..YTDLP_WORKERS {
-            let (queue, tx) = (queue.clone(), tx.clone());
+            let (queue, tx, proxy) = (queue.clone(), tx.clone(), proxy.clone());
             thread::spawn(move || {
                 loop {
                     let Some(batch) = queue.lock().unwrap().pop() else { break };
-                    let r = fetch_ytdlp(&batch);
+                    let r = fetch_ytdlp(&batch, proxy.as_deref());
                     if tx.send((batch, r)).is_err() {
                         break;
                     }
@@ -292,16 +295,21 @@ pub fn parse_time(s: &str) -> Option<i64> {
     Some(t)
 }
 
-fn fetch_ytdlp(channels: &[String]) -> Result<Vec<Video>> {
-    let urls = channels.iter().map(|c| format!("https://www.youtube.com/channel/{c}/videos"));
-    let out = Command::new("yt-dlp")
-        .args(["--flat-playlist", "-j", "--ignore-errors", "--no-warnings"])
-        .args(["--playlist-items", &format!("1:{PER_CHANNEL}")])
-        .args(["--extractor-args", "youtubetab:approximate_date"])
-        .args(urls)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()?;
+/// yt-dlp's arguments for the newest uploads of these channels.
+fn feed_args(channels: &[String], proxy: Option<&str>) -> Vec<String> {
+    let mut a: Vec<String> = ["--flat-playlist", "-j", "--ignore-errors", "--no-warnings", "--playlist-items"].map(Into::into).into();
+    a.push(format!("1:{PER_CHANNEL}"));
+    a.extend(["--extractor-args".into(), "youtubetab:approximate_date".into()]);
+    if let Some(p) = proxy {
+        a.extend(["--proxy".into(), p.to_owned()]);
+    }
+    a.push("--".into());
+    a.extend(channels.iter().map(|c| format!("https://www.youtube.com/channel/{c}/videos")));
+    a
+}
+
+fn fetch_ytdlp(channels: &[String], proxy: Option<&str>) -> Result<Vec<Video>> {
+    let out = crate::proc::ytdlp().args(feed_args(channels, proxy)).stdin(Stdio::null()).stderr(Stdio::null()).output()?;
     let mut videos = Vec::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
         let Ok(e) = serde_json::from_str::<Value>(line) else { continue };
@@ -328,6 +336,14 @@ fn fetch_ytdlp(channels: &[String]) -> Result<Vec<Video>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feed_fallback_uses_the_proxy() {
+        let ch = vec!["UCaaaaaaaaaaaaaaaaaaaaaa".to_owned()];
+        let a = feed_args(&ch, Some("socks5h://127.0.0.1:9050")).join(" ");
+        assert!(a.contains("--proxy socks5h://127.0.0.1:9050 -- https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/videos"), "{a}");
+        assert!(!feed_args(&ch, None).contains(&"--proxy".to_owned()));
+    }
 
     const SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">

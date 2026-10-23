@@ -125,7 +125,13 @@ and streams the videos through itself. A Raspberry Pi 4 or an old laptop is enou
    like `yourtube.home`.
 
 Without an address it only listens on the machine itself. Each browser picks its own profile
-and can turn on incognito.
+and can turn on incognito. Other websites can't embed or call it, so a page someone opens can't
+search or play things on it behind their back.
+
+The built-in server is small and doesn't yet protect itself well against a misbehaving device
+on the network. Until it does, if you share it beyond your own computer, put
+[Caddy](https://caddyserver.com) or `tailscale serve` in front of it and keep YourTube itself on
+`127.0.0.1`.
 
 ## Tor
 
@@ -142,7 +148,9 @@ instead of you.
 Playback and downloads still come straight from YouTube by default, because YouTube blocks
 most video streams over Tor with "Sign in to confirm you're not a bot". So YouTube can see
 which videos your IP plays, but not what you searched for or browsed to find them. The switch
-under the proxy sends playback through Tor too, but expect most videos to fail.
+under the proxy sends downloads through Tor too. Playing through Tor isn't possible yet,
+because mpv can't use a SOCKS proxy and would fetch the video from your own address, so
+YourTube refuses rather than leak it: download the video first, or use an HTTP proxy.
 
 Tor makes pages a few seconds slower, and some requests fail when YouTube blocks an exit node.
 Trying again usually works.

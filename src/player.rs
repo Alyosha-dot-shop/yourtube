@@ -19,7 +19,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -144,11 +144,20 @@ pub fn play_queue(items: &[Item], opts: &Options, on_event: impl Fn(Event)) -> R
         });
     }
 
+    // mpv fetches the video itself and can't use a SOCKS proxy, so it would quietly go direct.
+    // Downloaded files are fine: yt-dlp fetched those through the proxy.
+    if opts.proxy.as_deref().is_some_and(is_socks) && entries.iter().any(|e| e.source.starts_with("https://")) {
+        anyhow::bail!(
+            "playback through a SOCKS proxy like Tor isn't possible yet, because mpv would fetch the video from your own address. \
+             Turn off \"Playback and downloads through the proxy too\" in Preferences, use an HTTP proxy, or download the video first"
+        );
+    }
+
     let ipc_path = ipc_path(std::process::id(), next_serial());
     #[cfg(unix)]
     let _ = std::fs::remove_file(&ipc_path);
     let started = Instant::now();
-    let mut child = Command::new("mpv")
+    let mut child = crate::proc::mpv()
         .args(mpv_args(&entries, opts, &ipc_path, user_sets_hwdec()))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -333,6 +342,11 @@ pub fn watch_url(id: &str) -> String {
 }
 
 /// Everything mpv is started with. `user_hwdec`: the user's mpv.conf picks a decoder itself.
+/// socks4://, socks5://, socks5h://…
+pub fn is_socks(proxy: &str) -> bool {
+    proxy.trim().to_ascii_lowercase().starts_with("socks")
+}
+
 pub fn mpv_args(entries: &[Entry], o: &Options, ipc: &str, user_hwdec: bool) -> Vec<String> {
     let mut a = vec![
         format!("--input-ipc-server={ipc}"),
@@ -370,6 +384,7 @@ pub fn mpv_args(entries: &[Entry], o: &Options, ipc: &str, user_hwdec: bool) -> 
         a.push("--ytdl-raw-options-append=write-auto-subs=".into());
         a.push(format!("--ytdl-raw-options-append=sub-langs={}", langs.iter().map(|l| format!("{l}.*")).collect::<Vec<_>>().join(",")));
     }
+    a.extend(crate::proc::MPV_YTDL_SAFE.iter().map(|o| format!("--ytdl-raw-options-append={o}")));
     if let Some(p) = &o.proxy {
         a.push(format!("--ytdl-raw-options-append=proxy={p}"));
         // The video data itself is fetched by mpv (ffmpeg), which only speaks HTTP
@@ -646,6 +661,10 @@ mod tests {
             !a.iter().any(|x| x.starts_with("--speed") || x.starts_with("--slang") || x.contains("proxy") || x.starts_with("--keep-open"))
         );
         assert!(a.contains(&"--ytdl-raw-options-append=format-sort=res:1080,fps,+vcodec:avc".into()));
+        for safe in ["no-exec=", "no-remote-components=", "js-runtimes=deno"] {
+            assert!(a.contains(&format!("--ytdl-raw-options-append={safe}")), "missing {safe}");
+        }
+        assert!(is_socks("socks5h://127.0.0.1:9050") && is_socks("SOCKS4://x") && !is_socks("http://p:3128"));
         assert_eq!(
             a[a.len() - 5..],
             ["--{", "--start=95", "--force-media-title=T, with comma", "https://www.youtube.com/watch?v=x", "--}"]

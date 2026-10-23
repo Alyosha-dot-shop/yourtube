@@ -256,6 +256,18 @@ pub fn same_origin(sec_fetch_site: Option<&str>, origin: Option<&str>, host: Opt
     }
 }
 
+/// Another site embedding or fetching one of our URLs: an <img>, <video> or fetch() on some web page
+/// pointed at this server. Following a link here (a top-level page load) is still allowed.
+pub fn foreign_subrequest(site: Option<&str>, mode: Option<&str>, dest: Option<&str>) -> bool {
+    matches!(site, Some("cross-site" | "same-site")) && !(mode == Some("navigate") && matches!(dest, None | Some("document")))
+}
+
+/// May this GET write (search history, clicks)? Only when it came from our own pages, a bookmark or
+/// the address bar. Browsers without Sec-Fetch-Site (curl, very old ones) are trusted as before.
+pub fn own_request(site: Option<&str>) -> bool {
+    matches!(site, None | Some("same-origin" | "none"))
+}
+
 /// Without a password, only accept Host names a DNS-rebinding page can't use: IP addresses,
 /// localhost, single-label names and home-network suffixes. Public domains are refused.
 pub fn safe_host(host: &str) -> bool {
@@ -425,6 +437,14 @@ mod tests {
         assert!(!same_origin(None, Some("http://evil.example"), Some("192.168.1.5:8723")));
         assert!(!same_origin(None, Some("null"), Some("192.168.1.5:8723")));
         assert!(!same_origin(None, None, Some("192.168.1.5:8723")));
+        // <img src="http://pi:8723/search?q=…"> on another site: refused. A link from another site: allowed.
+        assert!(foreign_subrequest(Some("cross-site"), Some("no-cors"), Some("image")));
+        assert!(foreign_subrequest(Some("same-site"), Some("cors"), Some("empty")));
+        assert!(!foreign_subrequest(Some("cross-site"), Some("navigate"), Some("document")));
+        assert!(!foreign_subrequest(Some("same-origin"), Some("no-cors"), Some("video")));
+        assert!(!foreign_subrequest(None, None, None));
+        assert!(own_request(Some("same-origin")) && own_request(Some("none")) && own_request(None));
+        assert!(!own_request(Some("cross-site")) && !own_request(Some("same-site")));
 
         for ok in [
             "127.0.0.1:8723",

@@ -676,7 +676,7 @@ fn playback_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {
     net.add(&switch(
         edit,
         "Playback and downloads through the proxy too",
-        "Off: videos come straight from YouTube. YouTube blocks most playback over Tor.",
+        "Off: videos come straight from YouTube. On: downloads use the proxy; playing needs an HTTP proxy (with Tor, download first). YouTube blocks most playback over Tor.",
         |c| &mut c.proxy_playback,
     ));
     page.add(&net);

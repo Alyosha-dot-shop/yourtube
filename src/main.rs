@@ -8,6 +8,8 @@
 //!   yourtube eval [WEEKS]    how well For You's scoring predicts what you watched
 //!   yourtube serve           run the web version for your home network
 //!   yourtube web-password    set the web version's password (asked twice, stored as a hash)
+//!   yourtube sync-key        on your server: make the key devices sync with (shown once)
+//!   yourtube sync            sync history, subscriptions and playlists with your server now
 //!   yourtube play VIDEO_ID   play one video in mpv, resuming from saved progress
 
 // A server build leaves out the window, so code only the window calls looks unused there.
@@ -34,6 +36,7 @@ mod fmt;
 mod foryou;
 mod links;
 mod sponsorblock;
+mod sync;
 mod video;
 mod web;
 
@@ -58,6 +61,22 @@ fn main() -> Result<()> {
         Some("refresh") => feed::refresh(|p| eprintln!("{p:?}"))?,
         Some("serve") => web::serve(&config::load())?,
         Some("web-password") => set_web_password()?,
+        Some("sync-key") => {
+            let (key, hash) = sync::new_key()?;
+            let mut c = config::load();
+            c.sync_key_hash = hash;
+            config::save(&c)?;
+            println!("Sync key (shown only now; the server keeps just its hash):\n\n    {key}\n");
+            println!("Put it in YourTube on your computer: Preferences → Sync. Restart `yourtube serve` to use it.");
+            println!("Running this again makes a new key, and devices with the old one stop syncing.");
+        }
+        Some("sync") => {
+            let s = sync::sync_now(&config::load())?;
+            println!(
+                "Sent {} changes ({} taken by the server), got {} ({} applied here).",
+                s.sent, s.taken_by_server, s.received, s.applied
+            );
+        }
         Some("foryou") => {
             let s = foryou::refresh(&config::load(), |s| eprintln!("{s}"))?;
             println!("{} picks from {} candidates ({} requests failed).", s.picks, s.candidates, s.failed_requests);
@@ -97,7 +116,7 @@ fn main() -> Result<()> {
         }
         Some("-h" | "--help" | "help") => println!(
             "{}",
-            include_str!("main.rs").lines().skip(2).take(9).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
+            include_str!("main.rs").lines().skip(2).take(11).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
         ),
         Some(other) if links::video_id_from(other).is_none() => anyhow::bail!("unknown command {other:?}; try yourtube --help"),
         #[cfg(feature = "gui")]

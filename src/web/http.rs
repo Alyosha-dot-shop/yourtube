@@ -31,6 +31,8 @@ pub enum Route {
     Refresh,
     Status,
     Prefs,
+    /// `/api/sync`: a device with the sync key sends and gets changes (see sync.rs).
+    Sync,
     NotFound,
     /// A known path with the wrong method.
     BadMethod,
@@ -74,6 +76,7 @@ pub fn route(method: &str, path: &str) -> Route {
         ["api", "action"] => r(post, Route::Action),
         ["api", "refresh"] => r(post, Route::Refresh),
         ["api", "status"] => r(get, Route::Status),
+        ["api", "sync"] => r(post, Route::Sync),
         _ => Route::NotFound,
     }
 }

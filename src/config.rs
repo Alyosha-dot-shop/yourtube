@@ -83,6 +83,12 @@ pub struct Config {
     pub web_address: String,
     /// Password for the web version (empty = none; only sensible on a trusted home network).
     pub web_password: String,
+
+    // Sync (see sync.rs). On the desktop: your server's address and the key it gave you.
+    pub sync_server: String,
+    pub sync_key: String,
+    /// On the server: the SHA-256 of the key devices sync with (`yourtube sync-key`).
+    pub sync_key_hash: String,
 }
 
 /// SponsorBlock categories and what YourTube does with each by default.
@@ -134,6 +140,9 @@ impl Default for Config {
             hide_live: false,
             web_address: "127.0.0.1:8723".into(),
             web_password: String::new(),
+            sync_server: String::new(),
+            sync_key: String::new(),
+            sync_key_hash: String::new(),
         }
     }
 }
@@ -220,6 +229,9 @@ pub fn parse(text: &str) -> Config {
             "hide_live" => c.hide_live = on(v),
             "web_address" if v.contains(':') => c.web_address = v.to_owned(),
             "web_password" => c.web_password = v.to_owned(),
+            "sync_server" => c.sync_server = v.to_owned(),
+            "sync_key" => c.sync_key = v.to_owned(),
+            "sync_key_hash" if v.starts_with("sha256:") => c.sync_key_hash = v.to_owned(),
             k if k.starts_with("shortcut.") => {
                 c.shortcuts.insert(k["shortcut.".len()..].to_owned(), v.split_whitespace().map(str::to_owned).collect());
             }
@@ -278,6 +290,12 @@ pub fn render(c: &Config) -> String {
         yn(c.hide_live)
     );
     s += &format!("\n# Web version (yourtube serve)\nweb_address = {}\nweb_password = {}\n", c.web_address, c.web_password);
+    if !c.sync_server.is_empty() || !c.sync_key.is_empty() {
+        s += &format!("\n# Sync with your server (Preferences → Sync)\nsync_server = {}\nsync_key = {}\n", c.sync_server, c.sync_key);
+    }
+    if !c.sync_key_hash.is_empty() {
+        s += &format!("\n# Devices sync with the key whose hash this is (yourtube sync-key)\nsync_key_hash = {}\n", c.sync_key_hash);
+    }
     if !c.shortcuts.is_empty() {
         s += "\n# Shortcuts you changed (Preferences → Keyboard). Empty means off.\n";
         for (id, keys) in &c.shortcuts {

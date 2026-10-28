@@ -87,6 +87,8 @@ thread_local! {
 
 /// Open the window. `args` may hold video links to play right away.
 pub fn run(args: &[String]) {
+    // History, subscriptions and playlists sync with your server in the background, if set up.
+    crate::sync::start_background();
     let gapp = adw::Application::builder().application_id(APP_ID).flags(gio::ApplicationFlags::HANDLES_OPEN).build();
     gapp.connect_activate(|gapp| {
         app_for(gapp).present();

@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::db;
 use crate::foryou::ai;
 use adw::prelude::*;
-use gtk::{gdk, glib};
+use gtk::{gdk, gio, glib};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -42,6 +42,7 @@ pub fn show(app: &Rc<App>) {
     dialog.add(&profiles_page(app, &dialog));
     dialog.add(&playback_page(&edit));
     dialog.add(&privacy_page(&edit));
+    dialog.add(&sync_page(&edit));
 
     dialog.connect_closed(glib::clone!(
         #[weak]
@@ -546,6 +547,55 @@ fn entry(edit: &Rc<RefCell<Config>>, title: &str, field: fn(&mut Config) -> &mut
     let edit = edit.clone();
     row.connect_changed(move |r| *field(&mut edit.borrow_mut()) = r.text().trim().to_owned());
     row
+}
+
+fn sync_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder().title("Sync").icon_name("emblem-synchronizing-symbolic").build();
+    let group = adw::PreferencesGroup::builder()
+        .title("Sync with your server")
+        .description(
+            "Your history (and how far you got), subscriptions, playlists, searches, hidden channels and For You feedback \
+             stay the same here and on your server's web version (yourtube serve). This computer keeps its own copy, so \
+             YourTube works offline and catches up later. Get the key by running “yourtube sync-key” on the server. \
+             Only the main profile syncs.",
+        )
+        .build();
+    let server = entry(edit, "Server address (https://…)", |c| &mut c.sync_server);
+    let key = adw::PasswordEntryRow::builder().title("Sync key").text(&edit.borrow().sync_key).build();
+    key.connect_changed(glib::clone!(
+        #[strong]
+        edit,
+        move |r| edit.borrow_mut().sync_key = r.text().trim().to_owned()
+    ));
+    let status = adw::ActionRow::builder().title("Last sync").subtitle(crate::sync::status_text()).subtitle_lines(3).build();
+    let now = adw::ButtonRow::builder().title("Sync now").build();
+    now.connect_activated(glib::clone!(
+        #[strong]
+        edit,
+        #[weak]
+        status,
+        move |b| {
+            let cfg = edit.borrow().clone();
+            if !crate::sync::wanted(&cfg) {
+                status.set_subtitle("Fill in the address and key first (and use the main profile, not incognito)");
+                return;
+            }
+            b.set_sensitive(false);
+            status.set_subtitle("Syncing…");
+            let b = b.clone();
+            glib::spawn_future_local(async move {
+                let _ = gio::spawn_blocking(move || crate::sync::sync_now(&cfg).map(|_| ())).await;
+                status.set_subtitle(&crate::sync::status_text());
+                b.set_sensitive(true);
+            });
+        }
+    ));
+    group.add(&server);
+    group.add(&key);
+    group.add(&status);
+    group.add(&now);
+    page.add(&group);
+    page
 }
 
 fn playback_page(edit: &Rc<RefCell<Config>>) -> adw::PreferencesPage {

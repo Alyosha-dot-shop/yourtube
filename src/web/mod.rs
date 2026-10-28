@@ -37,6 +37,8 @@ use std::time::{Duration, Instant};
 const PAGE_WORKERS: usize = 8;
 const STREAM_WORKERS: usize = 12;
 const MAX_BODY: u64 = 64 * 1024;
+/// A sync request carries up to sync::BATCH changes (a first sync from a big history is a few MB in all).
+const SYNC_MAX_BODY: u64 = 16 << 20;
 const SESSION_DAYS: u64 = 30;
 /// A session also ends after this long without use.
 const SESSION_IDLE: Duration = Duration::from_secs(7 * 86400);
@@ -448,8 +450,9 @@ impl App {
             rq.headers().iter().filter_map(|(k, v)| Some((k.as_str().to_ascii_lowercase(), v.to_str().ok()?.to_owned()))).collect();
         let mut body = Vec::new();
         if method == "POST" {
-            let limited = http_body_util::Limited::new(rq.into_body(), MAX_BODY as usize);
-            match tokio::time::timeout(BODY_TIMEOUT, limited.collect()).await {
+            let (limit, wait) = if path == "/api/sync" { (SYNC_MAX_BODY, BODY_TIMEOUT * 8) } else { (MAX_BODY, BODY_TIMEOUT) };
+            let limited = http_body_util::Limited::new(rq.into_body(), limit as usize);
+            match tokio::time::timeout(wait, limited.collect()).await {
                 Ok(Ok(b)) => body = b.to_bytes().to_vec(),
                 _ => return plain(413, "Request too large or too slow."),
             }
@@ -526,6 +529,11 @@ impl App {
         // could read your history. Only accept names such a page can't have.
         if !password && !http::safe_host(host) {
             return Resp::text(403, "Open YourTube by its IP address or local name (e.g. http://192.168.1.20:8723), or set web_password.");
+        }
+        // Sync is for the desktop app, which proves itself with the sync key (not a login cookie,
+        // so the browser checks below don't apply to it).
+        if matches!(route, Route::Sync) {
+            return self.sync_api(req);
         }
         let site = req.header("sec-fetch-site");
         if !matches!(route, Route::Static(_)) && http::foreign_subrequest(site, req.header("sec-fetch-mode"), req.header("sec-fetch-dest"))
@@ -606,6 +614,7 @@ impl App {
             Route::Action => self.action(&ctx, req),
             Route::Refresh => Ok(self.refresh(&ctx, req)),
             Route::Status => Ok(self.status(&ctx, req.q("what"))),
+            Route::Sync => Ok(self.sync_api(req)), // answered earlier; here for completeness
             Route::NotFound => Ok(self.error_page(&ctx, 404, "Not found", "There's nothing at this address.")),
             Route::BadMethod => Ok(Resp::text(405, "Method not allowed")),
         };
@@ -1301,6 +1310,25 @@ impl App {
                 body: Body::Stream(r.body, r.length),
             },
             Err(e) => Resp::text(502, &format!("Can't play this video: {e}")),
+        }
+    }
+
+    fn sync_api(&self, req: &Req) -> Resp {
+        if self.cfg.sync_key_hash.is_empty() {
+            return Resp::json(json!({"error": "This server doesn't sync. Run `yourtube sync-key` here first."})).status(404);
+        }
+        if !crate::sync::key_ok(&self.cfg.sync_key_hash, req.header("authorization")) {
+            return Resp::json(json!({"error": "Wrong sync key"})).status(401);
+        }
+        let result = serde_json::from_slice::<crate::sync::Request>(&req.body)
+            .map_err(anyhow::Error::from)
+            .and_then(|r| crate::sync::serve(&mut self.conn(db::DEFAULT_PROFILE)?, &r));
+        match result {
+            Ok(r) => match serde_json::to_vec(&r) {
+                Ok(body) => Resp::new(200, "application/json", body).header("Cache-Control", "no-store"),
+                Err(e) => Resp::text(500, &format!("Sync failed: {e}")),
+            },
+            Err(e) => Resp::json(json!({"error": format!("Sync failed: {e}")})).status(400),
         }
     }
 

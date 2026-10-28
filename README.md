@@ -162,10 +162,10 @@ You can also point Preferences at your own recommender; the API is in
 `yourtube serve` serves the same subscriptions, For You, history and playlists to any browser,
 and streams the videos through itself. A Raspberry Pi 4 or an old laptop is enough.
 
-1. Set an address and password in `~/.config/yourtube/config`:
+1. Set an address in `~/.config/yourtube/config` and a password with `yourtube web-password`
+   (it asks twice and stores only a hash):
    ```text
    web_address = 0.0.0.0:8723
-   web_password = something long
    ```
 2. Run `yourtube serve`, or make it a systemd service.
 3. Open `http://<that machine>:8723`. If your router or Pi-hole does local DNS, give it a name
@@ -189,6 +189,23 @@ cargo build --release --no-default-features
 ```
 
 CI builds this for Linux arm64 as `yourtube-server-linux-arm64`.
+
+On phones and other browsers that play HLS (Safari does), videos come in HLS up to 1080p, relayed
+through the server like the 360p MP4 that other browsers get.
+
+### Sync the app with your server
+
+The app on your computer and the web version on your server can keep one history, one set of
+subscriptions and playlists, the same searches, hidden channels and For You feedback. Each keeps
+its own copy, so the app works offline and catches up later.
+
+1. On the server: `yourtube sync-key`. It shows a key once (the server keeps only its hash).
+   Restart `yourtube serve`.
+2. In the app: Preferences → Sync. Enter the server's address (https, for example through
+   `tailscale serve`) and the key.
+
+The app then syncs when it starts and every two minutes while it's open (or run `yourtube sync`).
+When the same thing changed in both places, the later change wins. Only the main profile syncs.
 
 ## Tor
 
@@ -278,6 +295,9 @@ yourtube foryou              rebuild For You
 yourtube eval [WEEKS]        how well For You predicts what you watch
 yourtube play VIDEO_ID       play one video from where you left off
 yourtube serve [ADDRESS]     run the web version
+yourtube web-password        set the web version's password
+yourtube sync-key            on the server: make the key the app syncs with
+yourtube sync                sync with your server now
 ```
 
 ## Compared with FreeTube

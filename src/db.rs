@@ -217,6 +217,7 @@ pub fn init(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS history_recent ON history(watched_at DESC);",
     )?;
     crate::download::init_tables(conn)?;
+    crate::sync::init(conn)?;
     Ok(())
 }
 

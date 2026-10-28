@@ -52,7 +52,8 @@ const SHOWN: usize = 24;
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("app.js");
-const MANIFEST: &str = r##"{"name":"YourTube","short_name":"YourTube","start_url":"/","display":"standalone","background_color":"#EC4A36","theme_color":"#EC4A36","icons":[{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml"}]}"##;
+const MANIFEST: &str = r##"{"name":"YourTube","short_name":"YourTube","start_url":"/","display":"standalone","background_color":"#EC4A36","theme_color":"#EC4A36","icons":[{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml"},{"src":"/static/apple-touch-icon.png","sizes":"180x180","type":"image/png"}]}"##;
+const APPLE_TOUCH_ICON: &[u8] = include_bytes!("../../data/icons/apple-touch-icon.png");
 
 const COOKIE_SESSION: &str = "yt_session";
 const COOKIE_PROFILE: &str = "yt_profile";
@@ -1323,11 +1324,13 @@ impl App {
 }
 
 fn static_file(name: &str) -> Resp {
-    let (ctype, body): (&str, &str) = match name {
-        "style.css" => ("text/css; charset=utf-8", STYLE),
-        "app.js" => ("text/javascript; charset=utf-8", SCRIPT),
-        "icon.svg" => ("image/svg+xml", html::LOGO),
-        "manifest.webmanifest" => ("application/manifest+json", MANIFEST),
+    let (ctype, body): (&str, &[u8]) = match name {
+        "style.css" => ("text/css; charset=utf-8", STYLE.as_bytes()),
+        "app.js" => ("text/javascript; charset=utf-8", SCRIPT.as_bytes()),
+        "icon.svg" => ("image/svg+xml", html::LOGO.as_bytes()),
+        // iPhones ignore SVG icons on the Home Screen and fill transparency with black: an opaque PNG.
+        "apple-touch-icon.png" => ("image/png", APPLE_TOUCH_ICON),
+        "manifest.webmanifest" => ("application/manifest+json", MANIFEST.as_bytes()),
         _ => return Resp::text(404, "Not found"),
     };
     Resp::new(200, ctype, body).header("Cache-Control", "public, max-age=86400")

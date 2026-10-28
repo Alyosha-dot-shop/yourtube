@@ -88,6 +88,8 @@ pub fn layout(ctx: &Ctx, title: &str, tab: Tab, body: &str, query: &str) -> Stri
 <meta name="referrer" content="no-referrer">
 <title>{title} · YourTube</title>
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="YourTube">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="stylesheet" href="/static/style.css?v={ver}">
 <script src="/static/app.js?v={ver}" defer></script>
@@ -219,7 +221,8 @@ pub fn login_page(error: &str, next: &str) -> String {
         r##"<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><meta name="theme-color" content="#EC4A36"><meta name="referrer" content="no-referrer">
-<title>Log in · YourTube</title><link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<title>Log in · YourTube</title><link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="YourTube"><link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="stylesheet" href="/static/style.css?v={ver}"></head>
 <body class="login"><form class="login-box" method="post" action="/login">
 {logo}<h1>YourTube</h1>{err}

@@ -36,7 +36,7 @@ pub enum Route {
     BadMethod,
 }
 
-pub const STATIC_FILES: &[&str] = &["style.css", "app.js", "icon.svg", "manifest.webmanifest"];
+pub const STATIC_FILES: &[&str] = &["style.css", "app.js", "icon.svg", "apple-touch-icon.png", "manifest.webmanifest"];
 
 pub fn route(method: &str, path: &str) -> Route {
     let get = matches!(method, "GET" | "HEAD");

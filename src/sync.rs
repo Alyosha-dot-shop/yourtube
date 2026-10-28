@@ -460,11 +460,17 @@ mod tests {
 
     /// A device syncing straight into a server connection.
     fn sync(device: &mut Connection, server: &mut Connection) -> Stats {
-        run(device, |req| {
+        // Changes are dated to the millisecond and equal times keep what's there. A fast machine
+        // can make a change, sync and make the next one inside a millisecond, which people can't:
+        // keep the steps apart, so each test checks what it means to.
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let stats = run(device, |req| {
             let json = serde_json::to_string(req).unwrap(); // the real thing goes over JSON
             serve(server, &serde_json::from_str(&json).unwrap())
         })
-        .unwrap()
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        stats
     }
 
     #[test]

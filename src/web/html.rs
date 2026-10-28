@@ -331,16 +331,18 @@ pub fn watch_info(w: &WatchInfo, ctx: &Ctx) -> String {
     )
 }
 
-pub fn watch_body(w: &WatchInfo, ctx: &Ctx) -> String {
+/// `hls_key` unlocks this video's HLS addresses (see stream.rs).
+pub fn watch_body(w: &WatchInfo, ctx: &Ctx, hls_key: &str) -> String {
     format!(
         r#"<div class="watch" data-id="{id}" data-title="{title}" data-channel="{ch}" data-cid="{cid}" data-len="{len}" data-start="{start:.0}" data-save="{save}">
 <div class="player-col">
-<div class="player"><video id="video" controls autoplay playsinline preload="auto" poster="/thumb/{id}" src="/stream/{id}"></video><p class="player-msg" hidden></p></div>
+<div class="player"><video id="video" controls autoplay playsinline preload="auto" poster="/thumb/{id}"><source src="/hls/{id}/index.m3u8?k={key}" type="application/vnd.apple.mpegurl"><source src="/stream/{id}" type="video/mp4"></video><p class="player-msg" hidden></p></div>
 <div class="v-info">{info}</div>
 </div>
 <aside class="related-col"><h2>Related</h2><div id="related" class="grid list" data-related="{id}"><p class="lede loading">Loading related videos…</p></div></aside>
 </div>"#,
         id = esc(w.id),
+        key = esc(hls_key),
         title = esc(w.title),
         ch = esc(w.channel),
         cid = esc(w.channel_id),

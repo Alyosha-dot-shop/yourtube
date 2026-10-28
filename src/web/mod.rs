@@ -455,7 +455,7 @@ impl App {
         }
         let cookies = headers.get("cookie").map(|c| http::parse_cookies(c)).unwrap_or_default();
         let req = Req { method, path, query, headers, cookies, body, peer };
-        let pool = if req.path.starts_with("/stream/") { streams } else { pages };
+        let pool = if req.path.starts_with("/stream/") || req.path.starts_with("/hls/") { streams } else { pages };
         let Ok(_slot) = pool.acquire_owned().await else { return plain(503, "Busy.") };
         let this = self.clone();
         let (req, resp) = tokio::task::spawn_blocking(move || {
@@ -534,11 +534,18 @@ impl App {
         if req.method == "POST" && !http::same_origin(req.header("sec-fetch-site"), req.header("origin"), Some(host)) {
             return Resp::text(403, "Cross-site request refused.");
         }
-        let authed = !password || req.cookies.get(COOKIE_SESSION).is_some_and(|t| self.sessions.check(t));
+        // HLS addresses carry a key from a watch page (only a logged-in page hands one out): a
+        // phone's built-in player fetches them and may not send the login cookie.
+        let hls_key = match &route {
+            Route::HlsPlaylist(id) | Route::HlsSegment(id, _) => self.resolver.hls_key_ok(req.q("k"), id),
+            _ => false,
+        };
+        let authed = hls_key || !password || req.cookies.get(COOKIE_SESSION).is_some_and(|t| self.sessions.check(t));
         if !authed && !matches!(route, Route::Login | Route::Static(_)) {
             let wants_html = req.method == "GET"
                 && !req.path.starts_with("/api/")
                 && !req.path.starts_with("/stream/")
+                && !req.path.starts_with("/hls/")
                 && !req.path.starts_with("/thumb/");
             if wants_html {
                 let next = match req.query.is_empty() {
@@ -590,6 +597,8 @@ impl App {
             Route::Static(name) => Ok(static_file(name)),
             Route::Thumb(id) => Ok(self.thumb(&id)),
             Route::Stream(id) => Ok(self.stream(&id, req.header("range"))),
+            Route::HlsPlaylist(id) => Ok(self.hls_playlist(&id, req.q("k"))),
+            Route::HlsSegment(id, n) => Ok(self.hls_segment(&id, n, req.header("range"))),
             Route::Info(id) => self.info(&ctx, &id),
             Route::Related(id) => self.related(&ctx, &id),
             Route::Progress => self.progress(&ctx, req),
@@ -903,7 +912,7 @@ impl App {
             }
         }
         let w = self.watch_info(ctx, &conn, &id, self.resolver.peek(&id).as_deref())?;
-        let body = html::watch_body(&w.borrow(), ctx);
+        let body = html::watch_body(&w.borrow(), ctx, &self.resolver.hls_key(&id));
         let title = if w.title.is_empty() { "Watch".to_owned() } else { w.title.clone() };
         Ok(self.page(ctx, &title, Tab::None, &body))
     }
@@ -1293,6 +1302,24 @@ impl App {
             Err(e) => Resp::text(502, &format!("Can't play this video: {e}")),
         }
     }
+
+    fn hls_playlist(&self, id: &str, key: &str) -> Resp {
+        match self.resolver.hls(id) {
+            Ok(h) => Resp::new(200, "application/vnd.apple.mpegurl", h.render(key)).header("Cache-Control", "private, no-store"),
+            Err(e) => Resp::text(502, &format!("Can't play this video: {e}")),
+        }
+    }
+
+    fn hls_segment(&self, id: &str, n: usize, range: Option<&str>) -> Resp {
+        match stream::relay_segment(&self.resolver, id, n, range) {
+            Ok(r) => Resp {
+                status: r.status,
+                headers: r.headers.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+                body: Body::Stream(r.body, r.length),
+            },
+            Err(e) => Resp::text(502, &format!("Can't play this video: {e}")),
+        }
+    }
 }
 
 fn static_file(name: &str) -> Resp {
@@ -1473,10 +1500,13 @@ mod tests {
         assert!(b.starts_with(r#"<h1 class="v-title">Me at the zoo</h1>"#), "{b}");
         assert!(b.contains(r#"data-sub="UC4QobU6STFB0P71PMvOGN5A""#));
         assert!(!b.contains("<video"));
-        let page = html::watch_body(&w.borrow(), &ctx);
+        let page = html::watch_body(&w.borrow(), &ctx, "k1");
         assert!(page.contains(r#"src="/stream/jNQXAC9IVRw""#) && page.contains(r#"data-start="12""#) && page.contains(r#"data-save="1""#));
+        // HLS first (Safari plays it, up to 1080p), the MP4 as the fallback.
+        let (hls, mp4) = (page.find(r#"src="/hls/jNQXAC9IVRw/index.m3u8?k=k1""#).unwrap(), page.find(r#"src="/stream/"#).unwrap());
+        assert!(hls < mp4);
         let incog = Ctx { incognito: true, ..ctx };
-        let page = html::watch_body(&OwnedWatch { save: false, ..w }.borrow(), &incog);
+        let page = html::watch_body(&OwnedWatch { save: false, ..w }.borrow(), &incog, "k2");
         assert!(!page.contains("data-sub=") && !page.contains("data-act=") && page.contains(r#"data-save="""#));
     }
 

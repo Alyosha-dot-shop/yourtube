@@ -186,9 +186,14 @@ if (watch) {
     if (j.title) document.title = j.title + " · YourTube";
   }).catch(() => {});
 
-  v.addEventListener("error", () => {
+  // With <source> children the browser tries each in turn (HLS where it plays, else the MP4);
+  // only the last one failing means nothing will play.
+  const failed = () => {
     if (msg.hidden) { msg.textContent = "The video didn't load. YouTube may be refusing this server; try again in a minute."; msg.hidden = false; }
-  });
+  };
+  v.addEventListener("error", failed);
+  const last = v.querySelector("source:last-of-type");
+  if (last) last.addEventListener("error", failed);
   v.addEventListener("playing", () => { msg.hidden = true; });
 
   const rel = $("#related");

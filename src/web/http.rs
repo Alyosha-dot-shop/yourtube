@@ -20,6 +20,10 @@ pub enum Route {
     Static(&'static str),
     Thumb(String),
     Stream(String),
+    /// `/hls/ID/index.m3u8`: the HLS playlist, rewritten to point here.
+    HlsPlaylist(String),
+    /// `/hls/ID/N.ts`: one HLS segment.
+    HlsSegment(String, usize),
     Info(String),
     Related(String),
     Progress,
@@ -54,6 +58,11 @@ pub fn route(method: &str, path: &str) -> Route {
         ["playlist", id] if valid_playlist_id(id) => r(get, Route::Playlist((*id).to_owned())),
         ["thumb", id] if valid_video_id(id) => r(get, Route::Thumb((*id).to_owned())),
         ["stream", id] if valid_video_id(id) => r(get, Route::Stream((*id).to_owned())),
+        ["hls", id, "index.m3u8"] if valid_video_id(id) => r(get, Route::HlsPlaylist((*id).to_owned())),
+        ["hls", id, seg] if valid_video_id(id) => match seg.strip_suffix(".ts").filter(|n| n.len() <= 6).and_then(|n| n.parse().ok()) {
+            Some(n) => r(get, Route::HlsSegment((*id).to_owned(), n)),
+            None => Route::NotFound,
+        },
         ["static", name] => match STATIC_FILES.iter().find(|f| *f == name) {
             Some(f) => r(get, Route::Static(f)),
             None => Route::NotFound,

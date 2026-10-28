@@ -7,6 +7,7 @@
 //!   yourtube foryou          rebuild the For You page from the command line
 //!   yourtube eval [WEEKS]    how well For You's scoring predicts what you watched
 //!   yourtube serve           run the web version for your home network
+//!   yourtube web-password    set the web version's password (asked twice, stored as a hash)
 //!   yourtube play VIDEO_ID   play one video in mpv, resuming from saved progress
 
 // A server build leaves out the window, so code only the window calls looks unused there.
@@ -56,6 +57,7 @@ fn main() -> Result<()> {
         }
         Some("refresh") => feed::refresh(|p| eprintln!("{p:?}"))?,
         Some("serve") => web::serve(&config::load())?,
+        Some("web-password") => set_web_password()?,
         Some("foryou") => {
             let s = foryou::refresh(&config::load(), |s| eprintln!("{s}"))?;
             println!("{} picks from {} candidates ({} requests failed).", s.picks, s.candidates, s.failed_requests);
@@ -95,7 +97,7 @@ fn main() -> Result<()> {
         }
         Some("-h" | "--help" | "help") => println!(
             "{}",
-            include_str!("main.rs").lines().skip(2).take(8).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
+            include_str!("main.rs").lines().skip(2).take(9).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
         ),
         Some(other) if links::video_id_from(other).is_none() => anyhow::bail!("unknown command {other:?}; try yourtube --help"),
         #[cfg(feature = "gui")]
@@ -119,6 +121,46 @@ fn first_run_import() -> Result<()> {
     if empty && dir.join("profiles.db").exists() {
         import::import(&mut conn, &dir)?;
     }
+    Ok(())
+}
+
+/// Ask for the web version's password (twice, not shown, when typed in a terminal) and save its hash.
+/// Without a terminal it reads one line, so `printf '%s\n' "$pw" | yourtube web-password` works too.
+fn set_web_password() -> Result<()> {
+    use std::io::{BufRead, IsTerminal, Write};
+    let tty = std::io::stdin().is_terminal();
+    let echo = |on: bool| {
+        if tty {
+            let _ =
+                std::process::Command::new("stty").arg(if on { "echo" } else { "-echo" }).stdin(std::process::Stdio::inherit()).status();
+        }
+    };
+    let ask = |prompt: &str| -> Result<String> {
+        if tty {
+            eprint!("{prompt}");
+            std::io::stderr().flush()?;
+        }
+        echo(false);
+        let mut line = String::new();
+        let read = std::io::stdin().lock().read_line(&mut line);
+        echo(true);
+        if tty {
+            eprintln!();
+        }
+        read?;
+        Ok(line.trim_end_matches(['\r', '\n']).to_owned())
+    };
+    let pw = ask("New password for the web version: ")?;
+    if pw.chars().count() < 8 {
+        anyhow::bail!("use at least 8 characters; nothing was changed");
+    }
+    if tty && ask("Once more: ")? != pw {
+        anyhow::bail!("the two didn't match; nothing was changed");
+    }
+    let mut c = config::load();
+    c.web_password = pw;
+    config::save(&c)?; // stores it as an argon2id hash
+    println!("Saved (only a hash is stored). Restart `yourtube serve` to use it.");
     Ok(())
 }
 

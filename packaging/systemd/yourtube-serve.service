@@ -1,0 +1,16 @@
+# The web version as a systemd user service. Install with the steps in README.md (Web version).
+[Unit]
+Description=YourTube web version
+After=network-online.target
+
+[Service]
+# Change the path if yourtube lives elsewhere, e.g. /usr/bin/yourtube from a package.
+ExecStart=%h/.local/bin/yourtube serve
+# yt-dlp (and deno, which it needs for YouTube) are often in ~/.local/bin too.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=YourTube: refresh the subscription feed every hour
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

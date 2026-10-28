@@ -1,0 +1,9 @@
+[Unit]
+Description=YourTube: refresh the subscription feed
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/yourtube refresh
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+TimeoutStartSec=20min
+Nice=10

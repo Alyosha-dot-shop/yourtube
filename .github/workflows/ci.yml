@@ -43,11 +43,18 @@ jobs:
           name: yourtube-linux-x86_64
           path: target/release/yourtube
 
-  server-arm64:
-    # `yourtube serve` alone, without the window, for a home server such as a Raspberry Pi.
-    # No GTK needed, so it runs on Debian stable.
-    name: Server build (Linux arm64, no window)
-    runs-on: ubuntu-24.04-arm
+  server:
+    # `yourtube serve` alone, without the window, for a home server such as a Raspberry Pi
+    # or an old PC. No GTK needed, so it runs on Debian stable.
+    name: Server build (Linux ${{ matrix.arch }}, no window)
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - arch: x86_64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     container: rust@sha256:45afd9478205dcdf7f98b099019fee773a33644cf69ac0a3b862eb31d2a1ccef # 1-slim-trixie (Rust 1.99.1), 2026-10-28
     steps:
       - name: Install SQLite and yt-dlp
@@ -61,7 +68,7 @@ jobs:
         run: cargo build --release --locked --no-default-features
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: yourtube-server-linux-arm64
+          name: yourtube-server-linux-${{ matrix.arch }}
           path: target/release/yourtube
 
   macos:

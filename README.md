@@ -167,7 +167,15 @@ and streams the videos through itself. A Raspberry Pi 4 or an old laptop is enou
    ```text
    web_address = 0.0.0.0:8723
    ```
-2. Run `yourtube serve`, or make it a systemd service.
+2. Run `yourtube serve`, or run it as a systemd user service with the units in
+   [`packaging/systemd`](packaging/systemd). They expect the program at `~/.local/bin/yourtube`
+   (edit `ExecStart` if it's elsewhere) and also refresh the feed hourly and For You nightly:
+   ```sh
+   cp packaging/systemd/* ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now yourtube-serve yourtube-refresh.timer yourtube-foryou.timer
+   sudo loginctl enable-linger "$USER"   # keep them running when you're logged out
+   ```
 3. Open `http://<that machine>:8723`. If your router or Pi-hole does local DNS, give it a name
    like `yourtube.home`.
 
@@ -188,7 +196,7 @@ on Debian stable or Raspberry Pi OS (it still needs `yt-dlp` to play videos):
 cargo build --release --no-default-features
 ```
 
-CI builds this for Linux arm64 as `yourtube-server-linux-arm64`.
+CI builds this as `yourtube-server-linux-arm64` and `yourtube-server-linux-x86_64`.
 
 On phones and other browsers that play HLS (Safari does), videos come in HLS up to 1080p, relayed
 through the server like the 360p MP4 that other browsers get.

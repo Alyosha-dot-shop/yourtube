@@ -181,6 +181,15 @@ waits ten minutes. Slow or oversized requests are cut off, and one device can't 
 though: to reach it from outside your home, put [Caddy](https://caddyserver.com) or
 `tailscale serve` in front of it for HTTPS.
 
+A server doesn't need the window. Build without it and no GTK or libadwaita is needed, so it runs
+on Debian stable or Raspberry Pi OS (it still needs `yt-dlp` to play videos):
+
+```sh
+cargo build --release --no-default-features
+```
+
+CI builds this for Linux arm64 as `yourtube-server-linux-arm64`.
+
 ## Tor
 
 YourTube never signs in to Google and sends no tracking cookies, so YouTube can't attach what

@@ -2,7 +2,7 @@
 
 use super::http::{esc, url_encode};
 use crate::db::Item;
-use crate::ui::fmt;
+use crate::fmt;
 
 /// What every page needs to know about the browser asking.
 pub struct Ctx {

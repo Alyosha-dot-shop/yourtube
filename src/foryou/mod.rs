@@ -278,7 +278,7 @@ fn continue_watching(conn: &rusqlite::Connection, p: &profile::Profile) -> Resul
             ..Default::default()
         };
         let mut it = db::Item::from(v);
-        it.note = Some(format!("Continue watching · {} left", crate::ui::fmt::clock(u.length - u.position)));
+        it.note = Some(format!("Continue watching · {} left", crate::fmt::clock(u.length - u.position)));
         it.position = Some(u.position);
         it.watched = true;
         out.push(it);

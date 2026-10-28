@@ -9,6 +9,10 @@
 //!   yourtube serve           run the web version for your home network
 //!   yourtube play VIDEO_ID   play one video in mpv, resuming from saved progress
 
+// A server build leaves out the window, so code only the window calls looks unused there.
+// The normal build still warns about real dead code.
+#![cfg_attr(not(feature = "gui"), allow(dead_code))]
+
 mod bridge;
 mod db;
 mod feed;
@@ -17,6 +21,7 @@ mod player;
 mod proc;
 mod report;
 mod thumbs;
+#[cfg(feature = "gui")]
 mod ui;
 mod yt;
 
@@ -24,7 +29,9 @@ mod config;
 mod download;
 mod export;
 mod extras;
+mod fmt;
 mod foryou;
+mod links;
 mod sponsorblock;
 mod video;
 mod web;
@@ -90,16 +97,21 @@ fn main() -> Result<()> {
             "{}",
             include_str!("main.rs").lines().skip(2).take(8).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n")
         ),
-        Some(other) if ui::video_id_from(other).is_none() => anyhow::bail!("unknown command {other:?}; try yourtube --help"),
+        Some(other) if links::video_id_from(other).is_none() => anyhow::bail!("unknown command {other:?}; try yourtube --help"),
+        #[cfg(feature = "gui")]
         _ => {
             first_run_import()?;
             ui::run(&args);
         }
+        // A server build (--no-default-features) has no window; `serve` and the other commands still work.
+        #[cfg(not(feature = "gui"))]
+        _ => anyhow::bail!("this build has no window (built without the \"gui\" feature); try yourtube serve"),
     }
     Ok(())
 }
 
 /// On the very first start, pull in FreeTube's data if it exists.
+#[cfg(feature = "gui")]
 fn first_run_import() -> Result<()> {
     let mut conn = db::open()?;
     let empty: bool = conn.query_row("SELECT COUNT(*) = 0 FROM channels", [], |r| r.get(0))?;

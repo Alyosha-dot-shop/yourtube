@@ -636,7 +636,7 @@ impl App {
                 job = self.job(&ctx.profile, "foryou");
             }
             let sub = match last {
-                Some(t) => format!("Picked for {} {}", ctx.profile, crate::ui::fmt::age(t)),
+                Some(t) => format!("Picked for {} {}", ctx.profile, crate::fmt::age(t)),
                 None => "Made on this computer from your searches and what you watch.".into(),
             };
             (picks, sub, Some(job))
@@ -692,7 +692,7 @@ impl App {
         let last: Option<i64> = conn.query_row("SELECT MAX(last_fetch) FROM channels WHERE subscribed = 1", [], |r| r.get(0))?;
         let sub = match (channels, last.filter(|t| *t > 0)) {
             (0, _) => String::new(),
-            (n, Some(t)) => format!("{n} channels · checked {}", crate::ui::fmt::age(t)),
+            (n, Some(t)) => format!("{n} channels · checked {}", crate::fmt::age(t)),
             (n, None) => format!("{n} channels"),
         };
         let mut body = html::heading("Subscriptions", &sub, Some(("feed", job.running, &job_text(&job))));
@@ -722,7 +722,7 @@ impl App {
                 + &html::empty("Search YouTube", "Type what you're looking for above, or paste a video link.");
             return Ok(Resp::html(html::layout(ctx, "Search", Tab::None, &body, "")));
         }
-        if let Some(id) = crate::ui::video_id_from(q) {
+        if let Some(id) = crate::links::video_id_from(q) {
             return Ok(Resp::redirect(&format!("/watch?v={id}")));
         }
         let conn = self.conn(&ctx.profile)?;
@@ -833,7 +833,7 @@ impl App {
         let items: Vec<Item> = db::playlist_items(&conn, id)?
             .into_iter()
             .map(|(mut it, added)| {
-                it.note = Some(format!("Saved {}", crate::ui::fmt::age(added)));
+                it.note = Some(format!("Saved {}", crate::fmt::age(added)));
                 it
             })
             .collect();
@@ -858,7 +858,7 @@ impl App {
         let items: Vec<Item> = db::history(&conn, HISTORY_LIMIT)?
             .into_iter()
             .map(|(mut it, at)| {
-                it.note = Some(format!("Watched {}", crate::ui::fmt::age(at)));
+                it.note = Some(format!("Watched {}", crate::fmt::age(at)));
                 it
             })
             .collect();
@@ -885,7 +885,7 @@ impl App {
     }
 
     fn watch(self: &Arc<Self>, ctx: &Ctx, v: &str, run: &str) -> Result<Resp> {
-        let Some(id) = Some(v).filter(|v| http::valid_video_id(v)).map(str::to_owned).or_else(|| crate::ui::video_id_from(v)) else {
+        let Some(id) = Some(v).filter(|v| http::valid_video_id(v)).map(str::to_owned).or_else(|| crate::links::video_id_from(v)) else {
             return Ok(self.error_page(ctx, 404, "No such video", "That doesn't look like a YouTube video id."));
         };
         self.resolver.prefetch(&id);

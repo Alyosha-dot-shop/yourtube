@@ -204,7 +204,7 @@ pub fn build(what: &str, page: &str, toolkit: &str, screenshot: Option<&str>) ->
         b += "None recorded.\n";
     }
     for p in problems.iter().rev().take(10) {
-        b += &format!("- `{}` {} — {}\n", p.code.id(), crate::ui::fmt::age(p.at), p.message);
+        b += &format!("- `{}` {} — {}\n", p.code.id(), crate::fmt::age(p.at), p.message);
     }
     b += "\n### Where\n\n";
     b += &format!(

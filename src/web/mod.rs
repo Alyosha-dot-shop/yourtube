@@ -645,7 +645,8 @@ impl App {
             db::add_progress(&conn, &mut picks)?;
             let hidden = Hidden::load(&conn);
             picks.retain(|it| hidden.allows(it));
-            (picks, format!("From your recommender at {base}"), None)
+            let sub = format!("{} from your recommender at {base}", count(picks.len(), "pick", "picks"));
+            (picks, sub, None)
         } else {
             let picks = db::rec_picks(&conn)?;
             let last = db::rec_last_run(&conn)?;
@@ -655,8 +656,10 @@ impl App {
                 job = self.job(&ctx.profile, "foryou");
             }
             let sub = match last {
-                Some(t) => format!("Picked for {} {}", ctx.profile, crate::fmt::age(t)),
-                None => "Made on this computer from your searches and what you watch.".into(),
+                Some(t) if !picks.is_empty() => {
+                    format!("{} from your own history, made {}", count(picks.len(), "pick", "picks"), crate::fmt::age(t))
+                }
+                _ => "Made on this computer from your searches and what you watch.".into(),
             };
             (picks, sub, Some(job))
         };
@@ -709,10 +712,15 @@ impl App {
         let job = self.job(&ctx.profile, "feed");
         let channels: i64 = conn.query_row("SELECT COUNT(*) FROM channels WHERE subscribed = 1", [], |r| r.get(0))?;
         let last: Option<i64> = conn.query_row("SELECT MAX(last_fetch) FROM channels WHERE subscribed = 1", [], |r| r.get(0))?;
+        let videos = match items.len() {
+            0 => String::new(),
+            n if n as i64 >= FEED_LIMIT => format!("The newest {n} videos from "),
+            n => format!("{} from ", count(n, "video", "videos")),
+        };
         let sub = match (channels, last.filter(|t| *t > 0)) {
             (0, _) => String::new(),
-            (n, Some(t)) => format!("{n} channels · checked {}", crate::fmt::age(t)),
-            (n, None) => format!("{n} channels"),
+            (n, Some(t)) => format!("{videos}{} · checked {}", count(n as usize, "channel", "channels"), crate::fmt::age(t)),
+            (n, None) => format!("{videos}{}", count(n as usize, "channel", "channels")),
         };
         let mut body = html::heading("Subscriptions", &sub, Some(("feed", job.running, &job_text(&job))));
         if items.is_empty() {
@@ -746,29 +754,37 @@ impl App {
         }
         let conn = self.conn(&ctx.profile)?;
         let results = crate::yt::search(q);
-        if !ctx.incognito && ctx.writes && self.cfg.remember_searches {
+        let saved = !ctx.incognito && ctx.writes && self.cfg.remember_searches;
+        if saved {
             let _ = db::record_search(&conn, q);
         }
-        let mut body = html::heading(&format!("Results for “{q}”"), "", None);
-        match results {
+        let title = format!("“{q}”");
+        let body = match results {
             Ok(r) => {
                 let hidden = Hidden::load(&conn);
                 let mut items: Vec<Item> = r.videos.into_iter().map(Item::from).filter(|it| hidden.allows(it)).collect();
                 db::add_progress(&conn, &mut items)?;
                 let wl = watch_later_ids(&conn);
-                body += &html::search_channels(&r.channels);
+                let live: HashSet<&str> = r.live.iter().map(String::as_str).collect();
+                let mut sub = count(items.len(), "result", "results");
+                if !saved {
+                    sub += " · not saved to your search history";
+                }
+                let mut body = html::heading(&title, &sub, None) + &html::search_channels(&r.channels);
                 if items.is_empty() {
                     body += &html::empty("No videos found", "Try other words.");
                 } else {
                     body += &html::grid(&items, |it| CardOpts {
                         in_watch_later: wl.contains(&it.id),
                         hide_views: ctx.hide_views,
+                        live: live.contains(it.id.as_str()),
                         ..Default::default()
                     });
                 }
+                body
             }
-            Err(e) => body += &html::empty("YouTube didn't answer", &e.to_string()),
-        }
+            Err(e) => html::heading(&title, "", None) + &html::empty("YouTube didn't answer", &e.to_string()),
+        };
         Ok(Resp::html(html::layout(ctx, &format!("{q} – Search"), Tab::None, &body, q)))
     }
 
@@ -867,6 +883,7 @@ impl App {
                 playlist: Some(&pl.id),
                 note: true,
                 hide_views: ctx.hide_views,
+                ..Default::default()
             });
         }
         Ok(self.page(ctx, &pl.name, Tab::Library, &body))
@@ -882,14 +899,25 @@ impl App {
             })
             .collect();
         let wl = watch_later_ids(&conn);
-        let sub = if !self.cfg.remember_history {
+        let note = if !self.cfg.remember_history {
             "History is turned off in Preferences."
         } else if ctx.incognito {
             "Incognito: what you watch now isn't added."
         } else {
             ""
         };
-        let mut body = html::heading("History", sub, None);
+        let sub = match items.len() {
+            0 => note.to_owned(),
+            n => {
+                let n = if n as i64 >= HISTORY_LIMIT {
+                    format!("The last {n} videos you watched")
+                } else {
+                    format!("{} you watched", count(n, "video", "videos"))
+                };
+                if note.is_empty() { n } else { format!("{n} · {note}") }
+            }
+        };
+        let mut body = html::heading("History", &sub, None);
         if items.is_empty() {
             body += &html::empty("Nothing watched yet", "Videos you watch show up here, with where you stopped.");
         } else {
@@ -948,6 +976,7 @@ impl App {
             w.published = r.timestamp.or(w.published);
             w.length = r.duration.or(w.length);
             w.description = r.description.clone();
+            w.loaded = true;
         }
         if !http::valid_channel_id(&w.channel_id) {
             w.channel_id.clear();
@@ -999,10 +1028,16 @@ impl App {
                 } else {
                     items
                         .iter()
-                        .map(|it| {
+                        .enumerate()
+                        .map(|(i, it)| {
                             html::card(
                                 it,
-                                CardOpts { in_watch_later: wl.contains(&it.id), hide_views: ctx.hide_views, ..Default::default() },
+                                CardOpts {
+                                    in_watch_later: wl.contains(&it.id),
+                                    hide_views: ctx.hide_views,
+                                    wave: Some(i),
+                                    ..Default::default()
+                                },
                             )
                         })
                         .collect()
@@ -1364,6 +1399,11 @@ fn static_file(name: &str) -> Resp {
     Resp::new(200, ctype, body).header("Cache-Control", "public, max-age=86400")
 }
 
+/// "1 video", "12 videos".
+fn count(n: usize, one: &str, many: &str) -> String {
+    if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
+}
+
 fn job_text(j: &Job) -> String {
     match &j.error {
         Some(e) => format!("Refresh failed: {e}"),
@@ -1387,6 +1427,7 @@ struct OwnedWatch {
     subscribed: bool,
     in_watch_later: bool,
     watched: bool,
+    loaded: bool,
 }
 
 impl OwnedWatch {
@@ -1405,6 +1446,7 @@ impl OwnedWatch {
             watched: self.watched,
             length: self.length,
             description: &self.description,
+            loaded: self.loaded,
         }
     }
 }

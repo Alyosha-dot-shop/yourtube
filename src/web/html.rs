@@ -55,28 +55,49 @@ fn icon(name: &str) -> &'static str {
         "incognito" => {
             r#"<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11h18M6 11l2-6h8l2 6"/><circle cx="7.5" cy="16" r="3"/><circle cx="16.5" cy="16" r="3"/><path d="M10.5 16h3"/></svg>"#
         }
+        "back" => r#"<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg>"#,
+        "play" => {
+            r#"<svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.4-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z" fill="currentColor" stroke="none"/></svg>"#
+        }
+        "pause" => {
+            r#"<svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/></svg>"#
+        }
         _ => "",
     }
 }
 
+/// The four sections, in the order of the tab bar.
+const TABS: [(Tab, &str, &str, &str); 4] = [
+    (Tab::ForYou, "/", "For You", "foryou"),
+    (Tab::Subscriptions, "/subscriptions", "Subscriptions", "subs"),
+    (Tab::Library, "/library", "Library", "library"),
+    (Tab::History, "/history", "History", "history"),
+];
+
+/// A stand-in card while videos load: grey bars with a moving shine.
+const SKELETON_CARD: &str = r#"<div class="card sk" aria-hidden="true"><span class="thumb"></span><div class="meta"><span class="bone"></span><span class="bone mid"></span><span class="bone short"></span></div></div>"#;
+
 pub fn layout(ctx: &Ctx, title: &str, tab: Tab, body: &str, query: &str) -> String {
-    let nav = [
-        (Tab::ForYou, "/", "For You", "foryou"),
-        (Tab::Subscriptions, "/subscriptions", "Subscriptions", "subs"),
-        (Tab::Library, "/library", "Library", "library"),
-        (Tab::History, "/history", "History", "history"),
-    ]
-    .iter()
-    .map(|(t, href, label, ic)| {
-        let cur = if *t == tab { r#" aria-current="page""# } else { "" };
-        format!(r#"<a href="{href}"{cur}>{}<span>{label}</span></a>"#, icon(ic))
-    })
-    .collect::<String>();
+    let nav = TABS
+        .iter()
+        .map(|(t, href, label, ic)| {
+            let cur = if *t == tab { r#" aria-current="page""# } else { "" };
+            format!(r#"<a href="{href}"{cur}>{}<span>{label}</span></a>"#, icon(ic))
+        })
+        .collect::<String>();
+    // The pill behind the current tab; pages outside the four tabs have none.
+    let current = TABS.iter().position(|(t, ..)| *t == tab).map(|i| i.to_string()).unwrap_or_default();
     let initial = ctx.profile.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
     let badge = if ctx.incognito {
         format!(r#"<a class="incog" href="/settings" title="Incognito: nothing is saved">{}<span>Incognito</span></a>"#, icon("incognito"))
     } else {
         String::new()
+    };
+    // The four tabs start at the logo; every other page (a video, a search, a channel) has a Back button.
+    let lead = if tab == Tab::None {
+        format!(r#"<a class="back" href="/" data-back aria-label="Back">{}<span>Back</span></a>"#, icon("back"))
+    } else {
+        format!(r#"<a class="brand" href="/" aria-label="YourTube home"><span class="tile">{}</span><b>YourTube</b></a>"#, icon("play"))
     };
     format!(
         r##"<!doctype html>
@@ -84,7 +105,9 @@ pub fn layout(ctx: &Ctx, title: &str, tab: Tab, body: &str, query: &str) -> Stri
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#EC4A36">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf8f6">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141211">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="referrer" content="no-referrer">
 <title>{title} · YourTube</title>
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
@@ -92,11 +115,11 @@ pub fn layout(ctx: &Ctx, title: &str, tab: Tab, body: &str, query: &str) -> Stri
 <meta name="apple-mobile-web-app-title" content="YourTube">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="stylesheet" href="/static/style.css?v={ver}">
-<script src="/static/app.js?v={ver}" defer></script>
+<script src="/static/app.js?v={ver}" defer blocking="render"></script>
 </head>
 <body{incog_class}>
 <header class="top">
-  <a class="brand" href="/" aria-label="YourTube home">{logo}<b>YourTube</b></a>
+  {lead}
   <form class="search" action="/search" role="search">
     <input type="search" name="q" value="{q}" placeholder="Search YouTube" aria-label="Search YouTube" enterkeyhint="search" autocomplete="off">
     <button aria-label="Search">{search}</button>
@@ -104,7 +127,7 @@ pub fn layout(ctx: &Ctx, title: &str, tab: Tab, body: &str, query: &str) -> Stri
   {badge}
   <a class="avatar" href="/settings" title="Profile: {profile}" aria-label="Profile and privacy: {profile}">{initial}</a>
 </header>
-<nav class="tabs">{nav}</nav>
+<nav class="tabs" data-tab="{current}" aria-label="Sections"><span class="pill" aria-hidden="true"></span>{nav}</nav>
 <main>
 {body}
 </main>
@@ -114,9 +137,6 @@ pub fn layout(ctx: &Ctx, title: &str, tab: Tab, body: &str, query: &str) -> Stri
         title = esc(title),
         ver = super::asset_version(),
         incog_class = if ctx.incognito { r#" class="incognito""# } else { "" },
-        logo = LOGO
-            .replace(r#"width="128" height="128""#, r#"width="30" height="30" aria-hidden="true""#)
-            .replace("<title>YourTube</title>", ""),
         q = esc(query),
         search = icon("search"),
         profile = esc(&ctx.profile),
@@ -133,43 +153,62 @@ pub struct CardOpts<'a> {
     pub hide_views: bool,
     /// Show the For You "why" note (or another note).
     pub note: bool,
+    /// Live right now (search results): a LIVE badge instead of the length.
+    pub live: bool,
+    /// The card's place in its list. The first screenfuls rise in a wave by it.
+    pub wave: Option<usize>,
 }
+
+/// Cards past this many appear without the entrance wave (they're off screen anyway).
+const WAVE_CARDS: usize = 24;
 
 pub fn card(it: &Item, o: CardOpts) -> String {
     let mut href = format!("/watch?v={}", it.id);
     if let Some(run) = it.run_id {
         href += &format!("&amp;run={run}");
     }
-    let dur = it.length.filter(|l| *l > 0.0).map(|l| format!(r#"<span class="dur">{}</span>"#, fmt::clock(l))).unwrap_or_default();
+    // The bar shows once there's more than a few seconds to come back to, as in the app.
     let prog = match (it.position, it.length) {
-        (Some(p), Some(l)) if l > 0.0 && p > 0.0 => {
+        (Some(p), Some(l)) if l > 0.0 && p > 5.0 => {
             let pct = (p / l * 100.0).clamp(2.0, 100.0);
             format!(r#"<span class="prog"><i style="width:{pct:.1}%"></i></span>"#)
         }
         _ => String::new(),
     };
+    let badge = if o.live {
+        r#"<span class="dur live">LIVE</span>"#.to_owned()
+    } else {
+        it.length.filter(|l| *l > 0.0).map(|l| format!(r#"<span class="dur">{}</span>"#, fmt::clock(l))).unwrap_or_default()
+    };
+    let channel = match (it.channel.is_empty(), it.channel_id.is_empty()) {
+        (true, _) => String::new(),
+        (false, true) => format!(r#"<p class="ch">{}</p>"#, esc(&it.channel)),
+        (false, false) => format!(r#"<p class="ch"><a href="/channel/{}">{}</a></p>"#, esc(&it.channel_id), esc(&it.channel)),
+    };
     let mut sub: Vec<String> = Vec::new();
-    if !it.channel.is_empty() {
-        if it.channel_id.is_empty() {
-            sub.push(esc(&it.channel));
-        } else {
-            sub.push(format!(r#"<a href="/channel/{}">{}</a>"#, esc(&it.channel_id), esc(&it.channel)));
-        }
-    }
-    if let Some(p) = it.published.filter(|p| *p > 0) {
-        sub.push(fmt::age(p));
+    // A live stream's "upload time" is just when we asked, so it says "Live now" instead.
+    if o.live {
+        sub.push("Live now".to_owned());
     }
     if let Some(v) = it.views.filter(|_| !o.hide_views) {
         sub.push(fmt::views(v));
     }
+    if let Some(p) = it.published.filter(|p| *p > 0 && !o.live) {
+        sub.push(fmt::age(p));
+    }
+    let sub = if sub.is_empty() { String::new() } else { format!(r#"<p class="sub">{}</p>"#, sub.join(" · ")) };
     let note = match (&it.note, o.note) {
         (Some(n), true) if !n.is_empty() => format!(r#"<p class="why">{}</p>"#, esc(n)),
         _ => String::new(),
     };
+    let (wave, wave_at) = match o.wave.filter(|i| *i < WAVE_CARDS) {
+        Some(i) => (" in", format!(r#" style="--i:{i}""#)),
+        None => ("", String::new()),
+    };
     format!(
-        r#"<article class="card{done}" data-id="{id}" data-title="{title}" data-channel="{ch}" data-cid="{cid}" data-len="{len}" data-wl="{wl}" data-watched="{watched}" data-pl="{pl}">
-<a class="thumb" href="{href}" tabindex="-1" aria-hidden="true"><img src="/thumb/{id}" alt="" loading="lazy" decoding="async">{dur}{prog}</a>
-<div class="meta"><a class="title" href="{href}">{title}</a><p class="sub">{sub}</p>{note}<button class="more" type="button" aria-label="More actions for {title}">{more}</button></div>
+        r#"<article class="card{done}{wave}"{wave_at} data-id="{id}" data-title="{title}" data-channel="{ch}" data-cid="{cid}" data-len="{len}" data-wl="{wl}" data-watched="{watched}" data-pl="{pl}">
+<a class="thumb{has_prog}" href="{href}" tabindex="-1" aria-hidden="true"><img src="/thumb/{id}" alt="" loading="lazy" decoding="async">{prog}{badge}</a>
+<div class="meta"><a class="title" href="{href}">{title}</a>{channel}{sub}{note}<button class="more" type="button" aria-label="More actions for {title}">{more}</button></div>
 </article>"#,
         done = if it.finished() { " done" } else { "" },
         id = esc(&it.id),
@@ -180,15 +219,15 @@ pub fn card(it: &Item, o: CardOpts) -> String {
         wl = if o.in_watch_later { "1" } else { "" },
         watched = if it.watched { "1" } else { "" },
         pl = o.playlist.map(esc).unwrap_or_default(),
-        sub = sub.join(" · "),
+        has_prog = if prog.is_empty() { "" } else { " has-prog" },
         more = icon("more"),
     )
 }
 
 pub fn grid<'a>(items: &[Item], o: impl Fn(&Item) -> CardOpts<'a>) -> String {
     let mut s = String::from(r#"<section class="grid">"#);
-    for it in items {
-        s += &card(it, o(it));
+    for (i, it) in items.iter().enumerate() {
+        s += &card(it, CardOpts { wave: Some(i), ..o(it) });
     }
     s += "</section>";
     s
@@ -219,8 +258,10 @@ pub fn login_page(error: &str, next: &str) -> String {
     let err = if error.is_empty() { String::new() } else { format!(r#"<p class="error" role="alert">{}</p>"#, esc(error)) };
     format!(
         r##"<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#EC4A36"><meta name="referrer" content="no-referrer">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf8f6">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141211"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="referrer" content="no-referrer">
 <title>Log in · YourTube</title><link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="YourTube"><link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="stylesheet" href="/static/style.css?v={ver}"></head>
@@ -285,29 +326,43 @@ pub struct WatchInfo<'a> {
     pub watched: bool,
     pub length: Option<f64>,
     pub description: &'a str,
+    /// yt-dlp has answered, so the description (and its chapters) is as complete as it gets.
+    pub loaded: bool,
 }
+
+/// Chapters listed on the video page at most (a few descriptions list hundreds of timestamps).
+const MAX_CHAPTERS: usize = 60;
 
 /// The part under the player (re-rendered by /api/info once yt-dlp has answered).
 pub fn watch_info(w: &WatchInfo, ctx: &Ctx) -> String {
-    let mut sub = Vec::new();
-    if let Some(p) = w.published.filter(|p| *p > 0) {
-        sub.push(fmt::age(p));
-    }
+    let mut facts = Vec::new();
     if let Some(v) = w.views.filter(|_| !ctx.hide_views) {
-        sub.push(fmt::views(v));
+        facts.push(fmt::views(v));
     }
+    if let Some(p) = w.published.filter(|p| *p > 0) {
+        facts.push(fmt::age(p));
+    }
+    if let Some(l) = w.length.filter(|l| *l > 0.0) {
+        facts.push(fmt::clock(l));
+    }
+    let facts = if facts.is_empty() { String::new() } else { format!(r#"<p class="facts">{}</p>"#, facts.join(" · ")) };
     let channel = if w.channel_id.is_empty() {
         format!(r#"<span class="ch-name">{}</span>"#, esc(w.channel))
     } else {
         format!(r#"<a class="ch-name" href="/channel/{}">{}</a>"#, esc(w.channel_id), esc(w.channel))
     };
+    let avatar = match w.channel.chars().next() {
+        Some(c) => format!(r#"<span class="ch-av" aria-hidden="true">{}</span>"#, esc(&c.to_uppercase().to_string())),
+        None => String::new(),
+    };
     let subscribe =
         if w.channel_id.is_empty() || ctx.incognito { String::new() } else { sub_button(w.channel_id, w.channel, w.subscribed) };
+    let play = format!(r#"<button class="play-pill" type="button" data-play>{}{}<span>Play</span></button>"#, icon("play"), icon("pause"));
     let actions = if ctx.incognito {
-        r#"<p class="lede">Incognito: nothing about this video is saved.</p>"#.to_owned()
+        format!(r#"<div class="chips">{play}</div><p class="lede">Incognito: nothing about this video is saved.</p>"#)
     } else {
         format!(
-            r#"<div class="chips"><button class="chip" data-act="watch_later" aria-pressed="{wl}">{wll}</button><button class="chip" data-act="{wact}">{wlabel}</button><button class="chip" data-act="more">More like this</button><button class="chip" data-act="not_interested">Not interested</button>{block}<button class="chip" data-act="copy">Copy link</button></div>"#,
+            r#"<div class="chips">{play}<button class="chip" data-act="watch_later" aria-pressed="{wl}">{wll}</button><button class="chip" data-act="{wact}">{wlabel}</button><button class="chip" data-act="more">More like this</button><button class="chip" data-act="not_interested">Not interested</button>{block}<button class="chip" data-act="copy">Copy link</button></div>"#,
             wl = w.in_watch_later,
             wll = if w.in_watch_later { "Saved to Watch later" } else { "Watch later" },
             wact = if w.watched { "unwatched" } else { "watched" },
@@ -319,18 +374,47 @@ pub fn watch_info(w: &WatchInfo, ctx: &Ctx) -> String {
             },
         )
     };
-    let desc = if w.description.is_empty() {
+    let desc = w.description.trim();
+    let about = if !w.loaded {
+        // Until yt-dlp answers: what the database knows, and shining bars for the description.
+        format!(
+            r#"<div class="about loading" aria-busy="true">{facts}<span class="bone"></span><span class="bone"></span><span class="bone short"></span></div>"#
+        )
+    } else if desc.is_empty() && facts.is_empty() {
+        String::new()
+    } else if desc.is_empty() {
+        format!(r#"<div class="about">{facts}</div>"#)
+    } else {
+        format!(
+            r#"<div class="about">{facts}<p class="desc-text">{}</p><button class="more-text" type="button" aria-expanded="false" hidden>more</button></div>"#,
+            esc(desc)
+        )
+    };
+    let chapters = crate::video::description_chapters(desc);
+    let chapters = if chapters.is_empty() {
         String::new()
     } else {
-        format!("<details class=\"desc\"><summary>Description</summary><p>{}</p></details>", esc(w.description))
+        let rows: String = chapters
+            .iter()
+            .take(MAX_CHAPTERS)
+            .map(|c| {
+                format!(
+                    r#"<li><button class="chap" type="button" data-t="{:.0}"><span class="chap-t">{}</span><span class="chap-n">{}</span></button></li>"#,
+                    c.start,
+                    fmt::clock(c.start),
+                    esc(&c.title)
+                )
+            })
+            .collect();
+        format!(r#"<section class="chapters"><h2>Chapters · {}</h2><ol>{rows}</ol></section>"#, chapters.len())
     };
     format!(
         r#"<h1 class="v-title">{title}</h1>
-<div class="v-row"><div class="v-ch">{channel}<span class="v-sub">{sub}</span></div>{subscribe}</div>
+<div class="v-row">{avatar}<div class="v-ch">{channel}</div>{subscribe}</div>
 {actions}
-{desc}"#,
+{about}
+{chapters}"#,
         title = if w.title.is_empty() { "Loading…".to_owned() } else { esc(w.title) },
-        sub = if sub.is_empty() { String::new() } else { format!(" · {}", sub.join(" · ")) },
     )
 }
 
@@ -339,11 +423,12 @@ pub fn watch_body(w: &WatchInfo, ctx: &Ctx, hls_key: &str) -> String {
     format!(
         r#"<div class="watch" data-id="{id}" data-title="{title}" data-channel="{ch}" data-cid="{cid}" data-len="{len}" data-start="{start:.0}" data-save="{save}">
 <div class="player-col">
-<div class="player"><video id="video" controls autoplay playsinline preload="auto" poster="/thumb/{id}"><source src="/hls/{id}/index.m3u8?k={key}" type="application/vnd.apple.mpegurl"><source src="/stream/{id}" type="video/mp4"></video><p class="player-msg" hidden></p></div>
+<div class="player-band"><div class="player"><video id="video" controls autoplay playsinline preload="auto" poster="/thumb/{id}"><source src="/hls/{id}/index.m3u8?k={key}" type="application/vnd.apple.mpegurl"><source src="/stream/{id}" type="video/mp4"></video><p class="player-msg" hidden></p></div></div>
 <div class="v-info">{info}</div>
 </div>
-<aside class="related-col"><h2>Related</h2><div id="related" class="grid list" data-related="{id}"><p class="lede loading">Loading related videos…</p></div></aside>
+<aside class="related-col"><h2>Related</h2><div id="related" class="grid list" data-related="{id}" aria-busy="true"><p class="sr-only">Loading related videos…</p>{sk}{sk}{sk}</div></aside>
 </div>"#,
+        sk = SKELETON_CARD,
         id = esc(w.id),
         key = esc(hls_key),
         title = esc(w.title),
@@ -441,5 +526,69 @@ mod tests {
         assert!(page.contains(r#"aria-current="page""#));
         assert!(settings_body(&ctx()).contains("&lt;b&gt;Kid&lt;/b&gt;"));
         assert!(!login_page("<b>", "\"><x").contains("\"><x"));
+    }
+
+    #[test]
+    fn card_badges_progress_and_wave() {
+        let it = Item { id: "jNQXAC9IVRw".into(), title: "t".into(), length: Some(600.0), position: Some(4.0), ..Default::default() };
+        // A few seconds watched: no bar yet, and the length badge stays put.
+        let c = card(&it, CardOpts::default());
+        assert!(!c.contains(r#"class="prog""#) && c.contains(r#"class="thumb""#) && c.contains(r#"<span class="dur">10:00</span>"#), "{c}");
+        let c = card(&Item { position: Some(90.0), ..it.clone() }, CardOpts::default());
+        assert!(c.contains(r#"class="thumb has-prog""#) && c.contains("width:15.0%"), "{c}");
+        // Live: a LIVE badge instead of the length.
+        let c = card(&it, CardOpts { live: true, ..Default::default() });
+        assert!(c.contains(r#"<span class="dur live">LIVE</span>"#) && !c.contains("10:00") && c.contains("Live now"), "{c}");
+        // Only the first cards of a list wave in, each with its place.
+        let g = grid(&vec![it.clone(); 30], |_| CardOpts::default());
+        assert!(g.contains(r#"class="card in" style="--i:0""#) && g.contains(r#"style="--i:23""#), "{g}");
+        assert!(!g.contains(r#"style="--i:24""#));
+        assert_eq!(g.matches(r#"class="card""#).count(), 6);
+    }
+
+    #[test]
+    fn header_and_tabs() {
+        let page = layout(&ctx(), "x", Tab::History, "", "");
+        assert!(page.contains(r#"<nav class="tabs" data-tab="3""#) && page.contains(r#"class="brand""#) && !page.contains("data-back"));
+        // Pages outside the four tabs: no pill, and a Back button instead of the logo.
+        let page = layout(&ctx(), "x", Tab::None, "", "");
+        assert!(page.contains(r#"<nav class="tabs" data-tab="""#) && page.contains("data-back") && !page.contains(r#"class="brand""#));
+        // The script runs before the first frame where browsers allow it (for the thumbnail flight back).
+        assert!(page.contains(r#"defer blocking="render""#));
+    }
+
+    #[test]
+    fn watch_info_about_and_chapters() {
+        let mut w = WatchInfo {
+            id: "jNQXAC9IVRw",
+            title: "Clip",
+            channel: "<i>Chan</i>",
+            channel_id: "",
+            published: None,
+            views: Some(1500),
+            start: 0.0,
+            save: true,
+            subscribed: false,
+            in_watch_later: false,
+            watched: false,
+            length: Some(185.0),
+            description: "",
+            loaded: false,
+        };
+        let b = watch_info(&w, &ctx());
+        assert!(b.contains(r#"<div class="about loading""#) && b.contains("1.5K views · 3:05"), "{b}");
+        assert!(b.contains(r#"<span class="ch-av" aria-hidden="true">&lt;</span>"#) && b.contains("&lt;i&gt;Chan&lt;/i&gt;"));
+        assert!(b.contains("data-play"));
+        w.loaded = true;
+        w.description = "Parts:\n0:00 Start <b>\n1:05 Middle & more\n2:30 End";
+        let b = watch_info(&w, &ctx());
+        assert!(!b.contains("loading") && b.contains(r#"<p class="desc-text">Parts:"#), "{b}");
+        assert!(
+            b.contains("Chapters · 3") && b.contains(r#"data-t="65""#) && b.contains("Middle &amp; more") && b.contains("Start &lt;b&gt;")
+        );
+        assert!(!b.contains("<b>"));
+        // No description and no facts: no card at all.
+        let b = watch_info(&WatchInfo { views: None, length: None, description: "", ..w }, &ctx());
+        assert!(!b.contains("about") && !b.contains("chapters"), "{b}");
     }
 }
